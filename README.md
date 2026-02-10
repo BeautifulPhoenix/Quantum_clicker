@@ -85,5 +85,5 @@ Si quieres ejecutar este proyecto en tu máquina local para experimentar con el 
 ---
 
 <div align="center">
-  <p>Hecho con 💜 y mucho ☕ por <b>Harmondez</b> y PabloBP97</p>
+  <p>Hecho con 💜 y mucho ☕ por <b>Harmondez</b> y <b>PabloBP97</b></p>
 </div>
