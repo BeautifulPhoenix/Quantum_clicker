@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="https://i.giphy.com/media/v1.Y2lkPTc5MGI3NjExcWc0OXM2eXJ6eXJ6eXJ6eXJ6eXJ6eXJ6eXJ6eXJ6eXJ6eXJ6eSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3o7TKs7sXz7Y0/giphy.gif" width="100%" height="250" style="object-fit: cover;">
+  <img src="https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExMXZ2cDQwYXhoeDMzbjA0NDhkZ2VsdWRtcjF2aXN1OGFuZ2JsdHAxMyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3o7aCXpnE2y0YCCoJa/giphy.gif" width="100%" height="250" style="object-fit: cover;">
 
   <br>
   <br>
@@ -85,5 +85,5 @@ Si quieres ejecutar este proyecto en tu máquina local para experimentar con el 
 ---
 
 <div align="center">
-  <p>Hecho con 💜 y mucha ☕ por <b>Harmondez</b> y colaboradores.</p>
+  <p>Hecho con 💜 y mucho ☕ por <b>Harmondez</b> y PabloBP97</p>
 </div>
