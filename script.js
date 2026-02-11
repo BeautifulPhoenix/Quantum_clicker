@@ -425,29 +425,7 @@ function checkAvailability() {
     });
 }
 
-window.doPrestige = function() {
-    const potentialMult = Math.floor(Math.cbrt(game.totalCookiesEarned / 1000000)) + 1;
-    if(potentialMult <= game.prestigeMult) {
-        alert("Necesitas acumular más energía total para aumentar tu multiplicador.");
-        return;
-    }
 
-    if(confirm(`¿ASCENDER?\n\nReiniciarás estructuras y mejoras.\nGanarás un multiplicador permanente de x${potentialMult}.\n¡Vale la pena!`)) {
-        sfxPrestige();
-        game.cookies = 0;
-        game.buildings = {};
-        game.upgrades = [];
-        game.prestigeMult = potentialMult;
-        
-        buildingsConfig.forEach(u => {
-            game.buildings[u.id] = 0;
-            u.currentPower = u.basePower;
-        });
-
-        saveGame();
-        renderStore();
-    }
-};
 
 window.activateOvercharge = function() {
     if (isOvercharged || overchargeCooldown) return;
@@ -630,26 +608,55 @@ window.toggleAchievements = function() {
     }
 }
 
-// --- LÓGICA DE ASCENSIÓN MEJORADA ---
+
+
+
+// ==========================================
+// SISTEMA DE ASCENSIÓN (PRESTIGE)
+// ==========================================
+
+const PRESTIGE_BASE = 1000000; // 1 Millón de energía para el primer punto
+
 window.doPrestige = function() {
     const modal = document.getElementById('modal-ascension');
-    const potentialAntimatter = Math.floor(Math.cbrt(game.totalCookiesEarned / 1000000));
     
-    if (potentialAntimatter <= 0) {
-        alert("Necesitas al menos 1 Millón de energía acumulada para ascender.");
+    // 1. FÓRMULA ESTILO COOKIE CLICKER
+    // Calculamos cuánta antimateria DEBERÍAS tener en total según tu energía histórica
+    let totalPotentialAntimatter = Math.floor(Math.cbrt(game.totalCookiesEarned / PRESTIGE_BASE));
+    
+    // 2. Restamos la que YA tienes para saber cuánta ganas AHORA
+    let amountToGain = totalPotentialAntimatter - game.antimatter;
+    
+    // Seguridad para no restar si gastaste puntos (futuro)
+    if (amountToGain < 0) amountToGain = 0;
+
+    if (amountToGain <= 0) {
+        // Cálculo de cuánto falta para el siguiente punto
+        const nextPoint = game.antimatter + 1;
+        const energyNeed = Math.pow(nextPoint, 3) * PRESTIGE_BASE;
+        const remaining = energyNeed - game.totalCookiesEarned;
+        
+        alert(`Aún no has generado suficiente energía para una partícula de Antimateria.\n\nNecesitas acumular: ${formatNumber(remaining)} de energía más.`);
         return;
     }
 
-    const futureMult = 1 + potentialAntimatter; 
+    // 3. Predicción del futuro (Simulamos qué pasará)
+    // bonus actual (ej: 10% por punto -> 0.1)
+    const currentMult = 1 + (game.antimatter * 0.1);
+    // bonus futuro
+    const futureMult = 1 + ((game.antimatter + amountToGain) * 0.1);
 
+    // 4. Actualizar la Interfaz del Modal
     document.getElementById('asc-total-cookies').innerText = formatNumber(game.totalCookiesEarned);
-    document.getElementById('asc-current-mult').innerText = `x${game.prestigeMult}`;
-    document.getElementById('asc-gain-antimatter').innerText = formatNumber(potentialAntimatter);
-    document.getElementById('asc-new-mult').innerText = formatNumber(futureMult);
+    document.getElementById('asc-current-mult').innerText = `x${currentMult.toFixed(1)}`;
+    
+    // Mostramos estadísticas en el modal
+    document.getElementById('asc-gain-antimatter').innerText = `+${formatNumber(amountToGain)}`;
+    document.getElementById('asc-new-mult').innerText = `x${futureMult.toFixed(1)}`;
 
-    modal.dataset.futureMult = futureMult;
-    modal.dataset.futureAntimatter = potentialAntimatter;
-
+    // Guardamos el dato de ganancia en el botón para usarlo al confirmar
+    modal.dataset.gain = amountToGain;
+    
     modal.style.display = 'flex';
 }
 
@@ -659,32 +666,44 @@ window.closeAscension = function() {
 
 window.confirmAscension = function() {
     const modal = document.getElementById('modal-ascension');
-    const newMult = parseFloat(modal.dataset.futureMult);
-    const gainAntimatter = parseInt(modal.dataset.futureAntimatter);
+    const gain = parseInt(modal.dataset.gain);
 
-    if (!newMult) return;
+    if (!gain || gain <= 0) return;
 
-    sfxPrestige();
+    sfxPrestige(); // Sonido de ascensión
 
-    game.cookies = 0;
-    game.buildings = {};
-    game.upgrades = [];
+    // 1. APLICAR RECOMPENSAS
+    game.antimatter += gain;
     
-    game.prestigeMult = newMult;
-    game.antimatter += gainAntimatter; 
+    // El multiplicador se recalcula basado en tu nueva antimateria total
+    // Fórmula: Base 1 + (10% por cada punto de antimateria)
+    game.prestigeMult = 1 + (game.antimatter * 0.1);
 
+    // 2. HARD RESET (Borramos progreso temporal)
+    game.cookies = 0;
+    game.buildings = {}; 
+    game.upgrades = []; 
+    
+    // Reiniciar contadores de edificios a 0
     buildingsConfig.forEach(u => {
         game.buildings[u.id] = 0;
-        u.currentPower = u.basePower;
+        u.currentPower = u.basePower; // Volvemos a potencia base (sin mejoras)
     });
 
+    // 3. GUARDAR Y REINICIAR UI
     saveGame();
     renderStore();
     updateUI();
     closeAscension();
     
-    showNotification("🌀 ASCENSIÓN COMPLETADA", `Has renacido con x${newMult} de poder.`);
+    // Notificación épica
+    showNotification("🌀 UNIVERSO REINICIADO", `Has obtenido ${gain} Antimateria. Bonus actual: ${game.prestigeMult.toFixed(1)}`);
 }
+
+
+
+
+
 
 // --- BOOT ---
 loadGame();
