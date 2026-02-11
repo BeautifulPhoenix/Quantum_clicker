@@ -76,6 +76,7 @@ let game = {
 // Variables temporales (no se guardan)
 let buffMultiplier = 1; // Multiplicador global de producción
 let clickBuffMultiplier = 1; // Multiplicador de clicks
+let isApocalypse = false;
 
 // ==========================================
 // 2.5. SISTEMA DE AYUDANTES (10 ALIENS)
@@ -300,10 +301,32 @@ function spawnParticles(pos) {
 function update3D() {
     const cps = getCPS();
     
+    // Vibración: más fuerte si hay apocalipsis
+    const shakeBase = isApocalypse ? 0.005 : 0.001; 
+    
     const rotSpeed = 0.005 + Math.min(0.1, cps * 0.00001);
     mainObject.rotation.y += rotSpeed;
     mainObject.rotation.x += rotSpeed * 0.5;
     glowMesh.rotation.y -= rotSpeed;
+    
+    // --- LÓGICA DE COLORES (NUEVO) ---
+    const time = Date.now() * 0.002;
+    if (isApocalypse) {
+        // MODO APOCALIPSIS (ROJO)
+        mainObject.material.color.setHex(0xff0000); 
+        mainObject.material.emissive.setHex(0x550000);
+        glowMesh.material.color.setHex(0xff3300);   
+        scene.fog.color.setHex(0x220000);           
+        mainObject.scale.setScalar(1 + Math.sin(time * 5) * 0.05); // Latido rápido
+    } else {
+        // MODO NORMAL (VERDE/AZUL)
+        mainObject.material.color.setHex(0x00ff88);
+        mainObject.material.emissive.setHex(0x004422);
+        glowMesh.material.color.setHex(0x7c4dff);
+        scene.fog.color.setHex(0x000000);
+        mainObject.scale.setScalar(1); 
+    }
+    // ---------------------------------
     
     const positions = starMesh.geometry.attributes.position.array;
     const starSpeed = 0.05 + Math.min(2.0, cps * 0.0005); 
@@ -322,7 +345,6 @@ function update3D() {
     }
 
     camera.position.lerp(new THREE.Vector3(0,0,8), 0.1);
-    const time = Date.now() * 0.002;
     mainObject.material.emissiveIntensity = 0.5 + Math.sin(time) * 0.2;
 
     composer.render();
@@ -342,6 +364,9 @@ function onResize() {
 // ANOMALIAS RANDOM (FRENZY GOLDEN COOKIES)
 
 function spawnAnomaly() {
+    // Probabilidad de corrupción (30% si hay Apocalipsis)
+    const isCorrupt = isApocalypse && Math.random() < 0.3;
+    
     const types = ['money', 'money', 'production', 'click']; 
     const type = types[Math.floor(Math.random() * types.length)];
     
@@ -349,48 +374,71 @@ function spawnAnomaly() {
     let icon = '⚛️';
     let color = 'gold';
     
-    if (type === 'production') { icon = '🔥'; color = '#ff5252'; } 
-    if (type === 'click') { icon = '⚡'; color = '#00e5ff'; }
+    // VISUALES
+    if (isCorrupt) {
+        icon = '👹'; 
+        color = '#ff0000'; // Rojo sangre
+    } else {
+        if (type === 'production') { icon = '🔥'; color = '#ff5252'; } 
+        if (type === 'click') { icon = '⚡'; color = '#00e5ff'; }
+    }
 
     orb.innerHTML = icon;
     orb.style.cssText = `
         position: absolute; font-size: 4rem; cursor: pointer; z-index: 999;
-        filter: drop-shadow(0 0 15px ${color}); animation: floatAnomaly 3s infinite ease-in-out;
+        filter: drop-shadow(0 0 15px ${color}); 
+        animation: floatAnomaly ${isCorrupt ? '0.5s' : '3s'} infinite ease-in-out;
         left: ${Math.random() * 80 + 10}%; top: ${Math.random() * 80 + 10}%;
     `;
 
     orb.onclick = () => {
         sfxAnomaly();
-        if (type === 'money') {
-            const bonus = Math.max(game.cookies * 0.15, getCPS() * 900); 
-            game.cookies += bonus;
-            game.totalCookiesEarned += bonus;
-            createFloatingText(parseInt(orb.style.left), parseInt(orb.style.top), `+${formatNumber(bonus)}`);
-        } else if (type === 'production') {
-            activateBuff('production', 7, 30);
-        } else if (type === 'click') {
-            activateBuff('click', 777, 10);
+        if (isCorrupt) {
+            // EFECTOS DE CORRUPCIÓN
+            const roll = Math.random();
+            if (roll < 0.4) { // 40% Malo: Ruptura
+                activateBuff('production', 0.5, 30);
+                showNotification("⚠️ RUPTURA", "Producción reducida al 50%.");
+            } else if (roll < 0.8) { // 40% Malo: Pérdida
+                const loss = game.cookies * 0.05;
+                game.cookies -= loss;
+                createFloatingText(parseInt(orb.style.left), parseInt(orb.style.top), `-${formatNumber(loss)}`, "#ff0000");
+            } else { // 20% Épico: Elder Frenzy
+                activateBuff('production', 666, 6); // x666 por 6 segundos
+                showSystemModal("👹 PODER ABSOLUTO", "Producción x666 durante 6 segundos.", false, null);
+            }
+        } else {
+            // EFECTOS NORMALES
+            if (type === 'money') {
+                const bonus = Math.max(game.cookies * 0.15, getCPS() * 900); 
+                game.cookies += bonus;
+                game.totalCookiesEarned += bonus;
+                createFloatingText(parseInt(orb.style.left), parseInt(orb.style.top), `+${formatNumber(bonus)}`);
+            } else if (type === 'production') {
+                activateBuff('production', 7, 30);
+            } else if (type === 'click') {
+                activateBuff('click', 777, 10);
+            }
         }
         orb.remove();
     };
 
     document.getElementById('game-area').appendChild(orb);
     
-    // MEJORA: Lente Cuántica (+2s de duración en pantalla)
-    let lifeTime = 6000;
+    // TIEMPOS
+    let lifeTime = isCorrupt ? 10000 : 6000; // Las malas duran más
     if (game.upgrades.includes('quantum-lens')) lifeTime += 2000;
     setTimeout(() => { if(orb.parentNode) orb.remove(); }, lifeTime); 
 
-    // MEJORA: Antena de Entropía (Aparición más frecuente)
     const anomalyHelper = helpersConfig.find(h => h.effect === 'anomalyRate');
     let baseTime = 30000 + Math.random() * 60000; 
     if (anomalyHelper && game.helpers.includes(anomalyHelper.id)) baseTime /= anomalyHelper.value;
-    
-    // Bonus de mejora de utilidad
     if (game.upgrades.includes('entropy-antenna')) baseTime *= 0.8; 
     
     setTimeout(spawnAnomaly, baseTime);
 }
+
+
 
 
 
@@ -526,6 +574,14 @@ window.buyUpgrade = function(upgradeId, cost) {
         sfxBuy();
         game.cookies -= cost;
         game.upgrades.push(upgradeId);
+        
+        // ACTIVAR APOCALIPSIS (NUEVO)
+        if (upgradeId === 'protocol-omega') {
+            isApocalypse = true;
+            sfxAnomaly(); 
+            showSystemModal("⚠️ ALERTA CRÍTICA", "Protocolo Omega activo.\nLa realidad se está colapsando.", false, null);
+        }
+
         recalculateStats();
         renderStore();
         updateUI();
@@ -593,7 +649,7 @@ function renderHelpers() {
     
     container.innerHTML = '';
 
-    // 1. CABECERA CON HUECOS
+    // CABECERA (Igual que antes)
     const header = document.createElement('div');
     const slotsColor = game.helpers.length >= MAX_HELPERS ? '#ff5252' : '#00ff88';
     header.style.cssText = "padding: 10px; margin-bottom: 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center;";
@@ -605,13 +661,12 @@ function renderHelpers() {
     `;
     container.appendChild(header);
     
-    // 2. CÁLCULOS
+    // CÁLCULOS
     const currentCPS = getCPS();
     const currentHelperCost = getHelpersCost();
-    // TU FÓRMULA MATEMÁTICA: Nivel = Raíz Cúbica de Total Ganado
     const playerLevel = Math.floor(Math.cbrt(game.totalCookiesEarned)); 
     
-    // 3. LISTA DE AYUDANTES
+    // LISTA
     helpersConfig.forEach(helper => {
         const isActive = game.helpers.includes(helper.id);
         const isLocked = playerLevel < helper.reqLevel;
@@ -619,7 +674,6 @@ function renderHelpers() {
         const div = document.createElement('div');
         let classes = `helper-item ${isActive ? 'active' : ''}`;
         
-        // Estilos para bloqueados o sin dinero
         if (isLocked) classes += ' locked';
         else if (!isActive && (game.helpers.length >= MAX_HELPERS || currentCPS - currentHelperCost < helper.cost)) {
             classes += ' disabled';
@@ -627,39 +681,38 @@ function renderHelpers() {
         
         div.className = classes;
 
-        // CONTENIDO DEL BOTÓN
+        // --- CAMBIO CLAVE: AHORA EL CLICK VA EN TODA LA CAJA ---
+        if (!isLocked) {
+            div.onclick = function() { toggleHelper(helper.id); };
+        }
+
+        // Textos y Contenido
         let btnContent = '';
         let statusText = '';
         let statusClass = '';
 
         if (isLocked) {
-            // Caso: Bloqueado por Nivel
             statusText = `Nivel ${helper.reqLevel} Req.`;
-            statusClass = 'helper-locked-text'; // Necesitaremos este estilo
+            statusClass = 'helper-locked-text';
             btnContent = '🔒';
         } else if (isActive) {
-            // Caso: Equipado
             statusText = '✓ EN EQUIPO';
             statusClass = 'helper-active';
             btnContent = '❌';
         } else {
-            // Caso: Disponible
             statusText = `Coste: ${helper.cost}/s`;
             statusClass = 'helper-cost';
             btnContent = game.helpers.length >= MAX_HELPERS ? '⛔' : '➕';
         }
 
-        // HTML INTERNO
         div.innerHTML = `
             <div class="helper-icon" style="${isLocked ? 'filter:grayscale(1); opacity:0.5' : ''}">${helper.icon}</div>
             <div class="helper-info">
                 <h4 style="${isLocked ? 'color:#666' : ''}">${isLocked ? '???' : helper.name}</h4>
-                <p>${isLocked ? 'Sigue acumulando energía para descubrirlo.' : helper.desc}</p>
+                <p>${isLocked ? 'Sigue acumulando energía.' : helper.desc}</p>
                 <div class="${statusClass}">${statusText}</div>
             </div>
-            <button class="helper-toggle ${isActive ? 'active' : ''}" 
-                    onclick="toggleHelper('${helper.id}')" 
-                    ${isLocked ? 'disabled' : ''}>
+            <button class="helper-toggle ${isActive ? 'active' : ''}" style="pointer-events: none;">
                 ${btnContent}
             </button>
         `;
@@ -750,59 +803,77 @@ function renderStore() {
     upgradesEl.innerHTML = '';
     let anyUp = false;
 
+    // ===============================================
     // 1. MEJORAS DE EDIFICIOS (MK-1, MK-2...)
+    // ===============================================
     buildingsConfig.forEach(b => {
         const count = game.buildings[b.id] || 0;
         milestones.forEach((th, i) => {
             const uid = `${b.id}-${th}`;
+            // Si tienes los edificios necesarios y NO has comprado la mejora
             if (count >= th && !game.upgrades.includes(uid)) {
                 anyUp = true;
                 const cost = b.baseCost * 20 * (i + 1) * th;
+                
                 const btn = document.createElement('div');
                 btn.className = 'upgrade-crate';
                 btn.innerHTML = upgradeIcons[i % upgradeIcons.length];
                 btn.dataset.cost = cost;
                 btn.setAttribute('data-tooltip', `${b.name} MK-${i+1}\nx2 Producción\nCoste: ${formatNumber(cost)}`);
+                
                 btn.onclick = () => window.buyUpgrade(uid, cost);
                 upgradesEl.appendChild(btn);
             }
         });
     });
 
-    // 2. MEJORAS ESPECIALES (UTILIDAD Y SINERGIA)
+    // ===============================================
+    // 2. MEJORAS ESPECIALES (UTILIDAD, SINERGIA Y APOCALIPSIS)
+    // ===============================================
     const specials = [
         { id: 'entropy-antenna', name: 'Antena de Entropía', icon: '📡', cost: 50000, desc: 'Anomalías aparecen un 20% más rápido.', req: () => game.totalCookiesEarned > 100000 },
         { id: 'quantum-lens', name: 'Lente Cuántica', icon: '🔍', cost: 150000, desc: 'Las anomalías duran +2s en pantalla.', req: () => game.clickCount > 500 },
         { id: 'grandma-mine-synergy', name: 'Red Neuronal', icon: '🧠', cost: 500000, desc: 'Servidores potencian Minas (+1%/cad uno).', req: () => game.buildings['grandma'] >= 50 && game.buildings['mine'] >= 10 },
         { id: 'factory-click-synergy', name: 'Sobrecarga de Pulsos', icon: '🌀', cost: 1000000, desc: 'Cada Sincrotrón da +5 de poder de click base.', req: () => game.buildings['factory'] >= 15 },
-        { id: 'overcharge-plus', name: 'Batería de Helio', icon: '🔋', cost: 250000, desc: 'Sobrecarga dura 5 segundos más.', req: () => game.totalCookiesEarned > 750000 }
+        { id: 'overcharge-plus', name: 'Batería de Helio', icon: '🔋', cost: 250000, desc: 'Sobrecarga dura 5 segundos más.', req: () => game.totalCookiesEarned > 750000 },
+        // AÑADIDO: PROTOCOLO OMEGA (Apocalipsis)
+        { id: 'protocol-omega', name: 'Protocolo Omega', icon: '💀', cost: 5000000, desc: 'ADVERTENCIA: Inicia el Colapso Cuántico.', req: () => game.totalCookiesEarned > 2000000 && !isApocalypse }
     ];
 
     specials.forEach(s => {
+        // Si cumples los requisitos (req) y NO la has comprado
         if (s.req() && !game.upgrades.includes(s.id)) {
             anyUp = true;
+            
             const btn = document.createElement('div');
-            btn.className = 'upgrade-crate special'; // Puedes añadir color morado en CSS
+            btn.className = 'upgrade-crate special'; // Clase extra por si quieres estilo morado
             btn.innerHTML = s.icon;
             btn.dataset.cost = s.cost;
             btn.setAttribute('data-tooltip', `${s.name}\n${s.desc}\nCoste: ${formatNumber(s.cost)}`);
+            
             btn.onclick = () => window.buyUpgrade(s.id, s.cost);
             upgradesEl.appendChild(btn);
         }
     });
 
+    // MENSAJE SI NO HAY MEJORAS DISPONIBLES
     if(!anyUp) upgradesEl.innerHTML = '<div style="color:#444; font-size:0.8rem; width:100%; text-align:center;">Juega más para desbloquear tecnología...</div>';
 
-    // 3. RENDERIZAR EDIFICIOS (Sin cambios necesarios aquí)
+    // ===============================================
+    // 3. RENDERIZAR LISTA DE EDIFICIOS (STORE)
+    // ===============================================
     buildingsEl.innerHTML = '';
     buildingsConfig.forEach(b => {
         const count = game.buildings[b.id] || 0;
         const cost = getCost(b.id);
+        
         const div = document.createElement('div');
         div.className = 'building-item';
         div.dataset.cost = cost;
+        
         const mult = b.currentPower / b.basePower;
         const multTxt = mult > 1 ? `<span style="color:var(--accent); font-size:0.8em">x${mult}</span>` : '';
+        
         div.innerHTML = `
             <div class="item-info">
                 <h4>${b.name} ${multTxt}</h4>
@@ -811,10 +882,12 @@ function renderStore() {
             </div>
             <div class="item-count">${count}</div>
         `;
+        
         div.onclick = () => window.buyBuilding(b.id);
         buildingsEl.appendChild(div);
     });
 }
+
 
 
 
@@ -889,6 +962,7 @@ function formatNumber(n) {
 }
 
 window.saveGame = function() {
+    game.isApocalypse = isApocalypse;
     game.lastSaveTime = Date.now();
     localStorage.setItem('quantumClickerUlt', JSON.stringify(game));
     const btn = document.querySelector('button[onclick="saveGame()"]');
@@ -901,6 +975,7 @@ function loadGame() {
     const d = JSON.parse(localStorage.getItem('quantumClickerUlt'));
     if(d) {
         game = { ...game, ...d };
+        if (typeof d.isApocalypse !== 'undefined') isApocalypse = d.isApocalypse;
         if(!game.upgrades) game.upgrades = [];
         if(!game.prestigeMult) game.prestigeMult = 1;
         if(!game.antimatter) game.antimatter = 0;
@@ -924,12 +999,14 @@ function loadGame() {
 }
 
 window.resetGame = function() {
+    
     showSystemModal(
         "BORRADO DE DATOS", 
         "¿Estás seguro de que quieres formatear el multiverso?\nTodo el progreso se perderá para siempre.", 
         true, // Es una confirmación
         function() {
             localStorage.removeItem('quantumClickerUlt');
+            isApocalypse = false;
             location.reload();
         }
     );
@@ -1095,7 +1172,8 @@ window.confirmAscension = function() {
     game.cookies = 0;
     game.buildings = {};
     game.upgrades = [];
-    game.helpers = []; 
+    game.helpers = [];
+    isApocalypse = false;
     
     // 2. APLICAR RECOMPENSAS
     game.antimatter += gain;
