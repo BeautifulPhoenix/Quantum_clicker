@@ -344,8 +344,13 @@ function update3D() {
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.position.add(p.userData.vel);
-        p.scale.multiplyScalar(0.92);
-        if(p.scale.x < 0.01) { scene.remove(p); particles.splice(i, 1); }
+        p.scale.multiplyScalar(0.92); // Se hacen pequeñas
+        
+        // Si son muy pequeñas, las eliminamos LIMPIANDO MEMORIA
+        if(p.scale.x < 0.01) { 
+            dispose3D(p); // <--- ¡ESTO ES LO IMPORTANTE! (Antes tenías scene.remove(p))
+            particles.splice(i, 1); 
+        }
     }
 
     camera.position.lerp(new THREE.Vector3(0,0,8), 0.1);
@@ -363,6 +368,25 @@ function onResize() {
 }
 
 
+// Función auxiliar para limpiar memoria de objetos 3D
+function dispose3D(object) {
+    if (!object) return;
+    
+    // 1. Eliminar de la escena
+    if (object.parent) object.parent.remove(object);
+    
+    // 2. Liberar geometría (memoria de vértices)
+    if (object.geometry) object.geometry.dispose();
+    
+    // 3. Liberar materiales (shaders y texturas)
+    if (object.material) {
+        if (Array.isArray(object.material)) {
+            object.material.forEach(mat => mat.dispose());
+        } else {
+            object.material.dispose();
+        }
+    }
+}
 
 
 
@@ -549,11 +573,13 @@ function getCPS() {
     let cps = 0;
     buildingsConfig.forEach(u => {
         if (u.type === 'auto') {
-            let bPower = (game.buildings[u.id] || 0) * u.currentPower;
+            // CAMBIO AQUÍ: Añadido "|| 0"
+            let count = game.buildings[u.id] || 0; 
+            let bPower = count * u.currentPower;
             
             // Sinergia: Red Neuronal
-            if (u.id === 'mine' && game.upgrades.includes('grandma-mine-synergy')) {
-                const grandmaCount = game.buildings['grandma'] || 0;
+            if (u.id === 'mine' && game.upgrades?.includes('grandma-mine-synergy')) { // Añadido ?.
+                const grandmaCount = game.buildings['grandma'] || 0; // Añadido || 0
                 bPower *= (1 + (grandmaCount * 0.01));
             }
             cps += bPower;
@@ -613,6 +639,7 @@ function getHelpersCost() {
 
 function getCost(id) {
     const item = buildingsConfig.find(u => u.id === id);
+    const currentAmount = game.buildings[id] || 0;
     return Math.floor(item.baseCost * Math.pow(1.15, game.buildings[id] || 0));
 }
 
@@ -1054,37 +1081,94 @@ function formatNumber(n) {
     return Math.floor(n);
 }
 
+// --- SISTEMA DE GUARDADO PRO ---
+const CURRENT_VERSION = 1.0; // Cambiaremos esto si añadimos mecánicas nuevas en el futuro
+
 window.saveGame = function() {
-    game.isApocalypse = isApocalypse;
     game.lastSaveTime = Date.now();
-    localStorage.setItem('quantumClickerUlt', JSON.stringify(game));
+    game.isApocalypse = isApocalypse; // Guardar estado visual
+
+    // Empaquetamos el juego con su versión
+    const savePackage = {
+        version: CURRENT_VERSION,
+        data: game
+    };
+
+    localStorage.setItem('quantumClickerUlt', JSON.stringify(savePackage));
+    
+    // Feedback visual en el botón
     const btn = document.querySelector('button[onclick="saveGame()"]');
     if(btn) {
-        const old = btn.innerText; btn.innerText = "OK!"; setTimeout(()=>btn.innerText=old, 1000);
+        const old = btn.innerText; 
+        btn.innerText = "💾 OK!"; 
+        setTimeout(()=>btn.innerText=old, 1000);
     }
 }
 
 function loadGame() {
-    const d = JSON.parse(localStorage.getItem('quantumClickerUlt'));
-    if(d) {
-        game = { ...game, ...d };
-        if (typeof d.isApocalypse !== 'undefined') isApocalypse = d.isApocalypse;
-        if(!game.upgrades) game.upgrades = [];
-        if(!game.prestigeMult) game.prestigeMult = 1;
-        if(!game.antimatter) game.antimatter = 0;
-        if(!game.achievements) game.achievements = [];
-        if(!game.helpers) game.helpers = [];
+    const rawSave = localStorage.getItem('quantumClickerUlt');
+    
+    if (rawSave) {
+        let parsedSave;
+        try {
+            parsedSave = JSON.parse(rawSave);
+        } catch (e) {
+            console.error("Save file corrupto", e);
+            return;
+        }
 
-        // Offline progress
+        // DETECTAR SI ES UN GUARDADO ANTIGUO (Sin versión) O NUEVO
+        let loadedGame = {};
+        
+        if (parsedSave.version) {
+            // Es un guardado moderno
+            console.log(`Cargando versión ${parsedSave.version}...`);
+            loadedGame = parsedSave.data;
+            
+            // AQUÍ IRÍAN LAS MIGRACIONES FUTURAS
+            // if (parsedSave.version < 1.1) { ...hacer cambios... }
+            
+        } else {
+            // Es un guardado antiguo (Legacy)
+            console.log("Cargando versión Legacy...");
+            loadedGame = parsedSave; // Antes guardábamos el objeto game directo
+        }
+
+        // FUSIONAR CON VALORES POR DEFECTO (Esto rellena huecos vacíos)
+        game = { ...game, ...loadedGame };
+
+        // RESTAURAR ESTADOS
+        if (typeof loadedGame.isApocalypse !== 'undefined') isApocalypse = loadedGame.isApocalypse;
+        
+        // INICIALIZACIÓN DE SEGURIDAD (Arrays vacíos si no existen)
+        if (!game.upgrades) game.upgrades = [];
+        if (!game.achievements) game.achievements = [];
+        if (!game.helpers) game.helpers = [];
+        if (!game.heavenlyUpgrades) game.heavenlyUpgrades = [];
+        if (!game.buildings) game.buildings = {};
+        
+        // Parche de Prestigio
+        if (typeof game.prestigeLevel === 'undefined') game.prestigeLevel = game.antimatter || 0;
+
+        // Recalcular estadísticas tras la carga
+        recalculateStats();
+
+        // CÁLCULO OFFLINE
         if (game.lastSaveTime) {
             const now = Date.now();
             const secondsOffline = (now - game.lastSaveTime) / 1000;
             if (secondsOffline > 60) {
-                const offlineProduction = (getCPS() * secondsOffline) * 0.5;
+                // Chequear mejora celestial de tiempo offline
+                let efficiency = 0.5;
+                if (game.heavenlyUpgrades.includes && game.heavenlyUpgrades.includes('offline_god')) efficiency = 1.0;
+                
+                const offlineProduction = (getCPS() * secondsOffline) * efficiency;
                 if (offlineProduction > 0) {
                     game.cookies += offlineProduction;
                     game.totalCookiesEarned += offlineProduction;
-                    alert(`¡Bienvenido de nuevo!\nHas generado: +${formatNumber(offlineProduction)} Energía offline.`);
+                    setTimeout(() => {
+                        showSystemModal("REGRESO AL UNIVERSO", `Producción Offline (+${efficiency*100}%):\n+${formatNumber(offlineProduction)} Energía.`, false, null);
+                    }, 1000);
                 }
             }
         }
