@@ -424,20 +424,28 @@ function spawnAnomaly() {
         } else {
             // --- EFECTOS NORMALES ---
             if (type === 'money') {
-                const bonus = Math.max(game.cookies * 0.15, getCPS() * 900); 
+                const percentage = 0.15; // 15% (Puedes cambiarlo a 0.10 o 0.20)
+                let bonus = game.cookies * percentage;
                 game.cookies += bonus;
                 game.totalCookiesEarned += bonus;
                 createFloatingText(parseInt(orb.style.left), parseInt(orb.style.top), `+${formatNumber(bonus)}`);
                 // Notificación verde
-                showAnomalyPopup(`⚛️ IMPULSO DE MATERIA<br><span style='font-size:0.9em; color:#fff'>+${formatNumber(bonus)} Energía</span>`, "good");
+                showAnomalyPopup(
+                    `⚛️ IMPULSO DE MATERIA<br>
+                    <span style='font-size:0.9em; color:#fff'>
+                        Ganancia: +${formatNumber(bonus)} 
+                        <span style="font-size:0.7em; color:#aaa">(+${percentage*100}% de energía)</span>
+                    </span>`, 
+                    "good"
+                );
+
             } else if (type === 'production') {
-                activateBuff('production', 7, 30);
                 // Notificación fuego
                 showAnomalyPopup("🔥 FRENESÍ<br><span style='font-size:0.9em; color:#fff'>Producción x7 (30s)</span>", "fire");
             } else if (type === 'click') {
                 activateBuff('click', 777, 10);
                 // Notificación eléctrica
-                showAnomalyPopup("⚡ SOBRECARGA MANUAL<br><span style='font-size:0.9em; color:#fff'>Clicks x777 (10s)</span>", "shock");
+                showAnomalyPopup("⚡ SOBRECARGA CÓSMICA<br><span style='font-size:0.9em; color:#fff'>Producción x777 (10s)</span>", "shock");
             }
         }
         orb.remove();
