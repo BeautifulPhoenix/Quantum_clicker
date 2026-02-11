@@ -1000,27 +1000,7 @@ function checkAvailability() {
 
 
 
-window.activateOvercharge = function() {
-    if (isOvercharged || overchargeCooldown) return;
-    isOvercharged = true;
-    overchargeCooldown = true;
-    const btn = document.getElementById('btn-overcharge');
-    btn.style.filter = "grayscale(1)";
-    btn.innerText = "⚡ ACTIVO ⚡";
-    document.getElementById('three-canvas').style.filter = "hue-rotate(90deg)";
-    sfxPrestige();
 
-    setTimeout(() => {
-        isOvercharged = false;
-        btn.innerText = "⏳ ENFRIANDO...";
-        document.getElementById('three-canvas').style.filter = "none";
-        setTimeout(() => {
-            overchargeCooldown = false;
-            btn.style.filter = "none";
-            btn.innerText = "🔥 SOBRECARGA";
-        }, 30000);
-    }, 10000);
-}
 
 function doClickLogic(cx, cy) {
     sfxClick();
