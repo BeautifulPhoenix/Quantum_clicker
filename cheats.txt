@@ -1,0 +1,62 @@
+Para probar tu juego como un desarrollador (o simplemente para divertirte un poco), puedes usar la consola de Chrome (F12 -> Console) para manipular el objeto global game y las funciones que hemos expuesto en el código.
+
+Aquí tienes los comandos exactos:
+
+1. Invocar una Anomalía al instante
+Como la función spawnAnomaly está definida en el ámbito global o vinculada a window, puedes llamarla directamente.
+
+Escribe esto en la consola y pulsa Enter:
+
+
+
+
+spawnAnomaly();
+
+
+Qué sucede: Aparecerá inmediatamente un icono (dinero, producción o click) en una posición aleatoria del game-area.
+
+Nota: Si tienes el Protocolo Omega (Apocalipsis) activo, hay un 30% de probabilidad de que la anomalía sea roja (corrupta).
+
+2. Ponerse 9,999,999 de Energía
+Para esto debes modificar la propiedad cookies del objeto game. Sin embargo, para que el número se refleje en la pantalla y no se rompa la lógica de "Energía Total Ganada" (que controla el nivel y la ascensión), te recomiendo ejecutar estas tres líneas a la vez:
+
+
+game.cookies = 9999999;
+game.totalCookiesEarned += 9999999;
+updateUI();
+
+
+
+game.cookies: Cambia tu saldo actual.
+game.totalCookiesEarned: Asegura que tu Nivel de Jugador (que se calcula con la raíz cúbica de este valor) suba acorde a tu nueva riqueza.
+updateUI(): Fuerza al juego a refrescar el marcador superior para que veas el cambio inmediatamente.
+
+3. Otros "Trucos" de Consola Útiles
+Ya que estás en la consola, aquí tienes un par de comandos más para testear las Perlas y los Clicks:
+
+Conseguir todas las Perlas:
+game.pearls = ['red', 'blue', 'green']; renderPearls();
+
+
+
+Simular que ya hiciste los 10,000 clicks (para la Perla Azul):
+game.totalClicks = 10000;
+
+
+
+Aumentar el Multiplicador de Prestigio:
+game.prestigeMult = 100; updateUI();
+
+
+/////////////////////
+
+
+
+
+
+
+
+
+
+
+

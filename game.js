@@ -1984,3 +1984,5 @@ window.importSave = function() {
         console.error(e);
     }
 }
+
+window.game = game;
