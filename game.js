@@ -78,58 +78,106 @@ let buffMultiplier = 1; // Multiplicador global de producción
 let clickBuffMultiplier = 1; // Multiplicador de clicks
 
 // ==========================================
-// 2.5. SISTEMA DE AYUDANTES
+// 2.5. SISTEMA DE AYUDANTES (10 ALIENS)
 // ==========================================
+
+// Fórmula de Nivel: Nivel = Raíz Cúbica de Energía Total
+// Nivel 10 = 1,000 Energía
+// Nivel 20 = 8,000 Energía
+// Nivel 50 = 125,000 Energía
+// Nivel 100 = 1,000,000 Energía (Ascensión)
+
+const MAX_HELPERS = 4; // Solo 4 huecos
+
 const helpersConfig = [
+    // TIER 1 (PRINCIPIANTE)
     { 
-        id: 'helper-click', 
+        id: 'h_clicker', 
         name: '👽 Graxion el Potenciador', 
-        desc: 'Triplica el poder de tus clicks', 
-        cost: 5, 
-        icon: '👽',
-        unlockAt: 10, // CPS mínimo para desbloquear
-        effect: 'clickPower',
-        value: 3
+        desc: 'Tus clicks son un +300% más potentes.', 
+        cost: 15, icon: '👽', 
+        reqLevel: 5, // ~125 Energía total
+        effect: 'clickPower', value: 3 
     },
     { 
-        id: 'helper-prod', 
-        name: '🛸 Zyx Multiplicador', 
-        desc: 'Aumenta producción x1.5', 
-        cost: 20, 
-        icon: '🛸',
-        unlockAt: 50,
-        effect: 'cpsMultiplier',
-        value: 1.5
+        id: 'h_miner', 
+        name: '🤖 Unit-734', 
+        desc: 'Producción automática +50%.', 
+        cost: 50, icon: '🤖', 
+        reqLevel: 10, // ~1,000 Energía
+        effect: 'cpsMultiplier', value: 1.5 
+    },
+    
+    // TIER 2 (INTERMEDIO)
+    { 
+        id: 'h_discount', 
+        name: '🛒 Mercader Ferengi', 
+        desc: 'Los edificios cuestan un 10% menos.', 
+        cost: 100, icon: '🛒', 
+        reqLevel: 15, // ~3,375 Energía
+        effect: 'costReduction', value: 0.9 
     },
     { 
-        id: 'helper-combo', 
-        name: '⭐ Nebula Mantenedora', 
-        desc: 'El combo dura el doble de tiempo', 
-        cost: 15, 
-        icon: '⭐',
-        unlockAt: 100,
-        effect: 'comboTime',
-        value: 2
+        id: 'h_combo', 
+        name: '⭐ Nebula Táctica', 
+        desc: 'El combo dura el doble (x2 tiempo).', 
+        cost: 200, icon: '⭐', 
+        reqLevel: 20, // ~8,000 Energía
+        effect: 'comboTime', value: 2 
+    },
+
+    // TIER 3 (AVANZADO)
+    { 
+        id: 'h_anomaly', 
+        name: '🔮 Oráculo del Vacío', 
+        desc: 'Las anomalías aparecen el doble de rápido.', 
+        cost: 500, icon: '🔮', 
+        reqLevel: 30, // ~27,000 Energía
+        effect: 'anomalyRate', value: 2 
     },
     { 
-        id: 'helper-overcharge', 
-        name: '🌠 Quantum Acelerador', 
-        desc: 'Sobrecarga se enfría 50% más rápido', 
-        cost: 50, 
-        icon: '🌠',
-        unlockAt: 500,
-        effect: 'overchargeCooldown',
-        value: 0.5
+        id: 'h_crit', 
+        name: '🎯 Francotirador Cuántico', 
+        desc: '10% de probabilidad de Click Crítico (x10 daño).', 
+        cost: 800, icon: '🎯', 
+        reqLevel: 40, // ~64,000 Energía
+        effect: 'critChance', value: 0.1 
+    },
+
+    // TIER 4 (EXPERTO)
+    { 
+        id: 'h_overcharge', 
+        name: '⚡ Ingeniero de Plasma', 
+        desc: 'Sobrecarga se enfría en la mitad de tiempo.', 
+        cost: 1200, icon: '⚡', 
+        reqLevel: 50, // ~125,000 Energía
+        effect: 'overchargeCooldown', value: 0.5 
     },
     { 
-        id: 'helper-anomaly', 
-        name: '🔮 Vidente Cósmico', 
-        desc: 'Anomalías aparecen 2x más seguido', 
-        cost: 30, 
-        icon: '🔮',
-        unlockAt: 200,
-        effect: 'anomalyRate',
-        value: 2
+        id: 'h_banker', 
+        name: '💰 Inversor Galáctico', 
+        desc: 'Las anomalías de dinero dan +50% extra.', 
+        cost: 2000, icon: '💰', 
+        reqLevel: 65, // ~274,000 Energía
+        effect: 'goldenCookieBuff', value: 1.5 
+    },
+
+    // TIER 5 (MAESTRO)
+    { 
+        id: 'h_synergy', 
+        name: '🔗 Mente Colmena', 
+        desc: 'Ganas +1% CPS por cada edificio que poseas.', 
+        cost: 5000, icon: '🔗', 
+        reqLevel: 80, // ~512,000 Energía
+        effect: 'buildingSynergy', value: 0.01 
+    },
+    { 
+        id: 'h_master', 
+        name: '👑 Emperador del Tiempo', 
+        desc: 'Aumenta TODO (Click y Prod) un x2.0.', 
+        cost: 10000, icon: '👑', 
+        reqLevel: 100, // 1,000,000 Energía
+        effect: 'globalMultiplier', value: 2.0 
     }
 ];
 
@@ -464,75 +512,140 @@ window.buyUpgrade = function(upgradeId, cost) {
     }
 };
 
+
 window.toggleHelper = function(helperId) {
     const helper = helpersConfig.find(h => h.id === helperId);
     if (!helper) return;
     
+    // Calcular nivel actual del jugador (Raíz Cúbica del Total)
+    const playerLevel = Math.floor(Math.cbrt(game.totalCookiesEarned));
+    
+    // Seguridad: No puedes fichar si no tienes nivel (anti-hackers)
+    if (playerLevel < helper.reqLevel) return;
+
     const isActive = game.helpers.includes(helperId);
     
     if (isActive) {
-        // Desactivar ayudante
+        // DESACTIVAR (Siempre se puede)
         game.helpers = game.helpers.filter(id => id !== helperId);
-        showNotification("❌ Ayudante Despedido", `${helper.name} ha dejado el equipo`);
+        showNotification("❌ Ayudante Despedido", `${helper.name} ha vuelto a su planeta.`);
     } else {
-        // Verificar si puede permitirse el costo
+        // ACTIVAR (Hay restricciones)
+        
+        // 1. ¿Hay hueco en la nave?
+        if (game.helpers.length >= MAX_HELPERS) {
+            showSystemModal(
+                "NAVE LLENA", 
+                `Solo tienes ${MAX_HELPERS} asientos disponibles.\nDebes despedir a alguien antes de contratar a ${helper.name}.`, 
+                false
+            );
+            return;
+        }
+
+        // 2. ¿Puedes pagar su sueldo?
         const currentCPS = getCPS();
-        const currentHelperCost = getHelpersCost();
+        const currentHelperCost = getHelpersCost(); 
         
         if (currentCPS - currentHelperCost < helper.cost) {
-            alert(`No tienes suficiente CPS para contratar a ${helper.name}.\nNecesitas al menos ${helper.cost}/seg disponible.`);
+            showSystemModal(
+                "SIN FONDOS",
+                `Tu imperio no genera suficiente energía para pagar a ${helper.name}.\nCoste: ${helper.cost}/seg`,
+                false
+            );
             return;
         }
         
-        // Activar ayudante
+        // ¡Contratado!
         game.helpers.push(helperId);
-        sfxPrestige();
-        showNotification("✅ Ayudante Contratado", `${helper.name} se ha unido al equipo`);
+        sfxPrestige(); 
+        showNotification("✅ Ayudante Equipado", `${helper.name} se ha unido al equipo.`);
     }
     
     renderHelpers();
     updateUI();
 };
 
+
+
 function renderHelpers() {
     const container = document.getElementById('helpers-list');
     if (!container) return;
     
     container.innerHTML = '';
+
+    // 1. CABECERA CON HUECOS
+    const header = document.createElement('div');
+    const slotsColor = game.helpers.length >= MAX_HELPERS ? '#ff5252' : '#00ff88';
+    header.style.cssText = "padding: 10px; margin-bottom: 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center;";
+    header.innerHTML = `
+        <span style="color:#aaa; font-size:0.9rem;">EQUIPO ACTIVO</span>
+        <span style="color: ${slotsColor}; font-weight: bold; font-size: 1.1rem;">
+            ${game.helpers.length} / ${MAX_HELPERS}
+        </span>
+    `;
+    container.appendChild(header);
+    
+    // 2. CÁLCULOS
     const currentCPS = getCPS();
     const currentHelperCost = getHelpersCost();
+    // TU FÓRMULA MATEMÁTICA: Nivel = Raíz Cúbica de Total Ganado
+    const playerLevel = Math.floor(Math.cbrt(game.totalCookiesEarned)); 
     
+    // 3. LISTA DE AYUDANTES
     helpersConfig.forEach(helper => {
         const isActive = game.helpers.includes(helper.id);
-        const isUnlocked = currentCPS >= helper.unlockAt;
-        const canAfford = (currentCPS - currentHelperCost) >= helper.cost;
-        
-        if (!isUnlocked) return; // No mostrar ayudantes bloqueados
+        const isLocked = playerLevel < helper.reqLevel;
         
         const div = document.createElement('div');
-        div.className = `helper-item ${isActive ? 'active' : ''} ${!canAfford && !isActive ? 'disabled' : ''}`;
+        let classes = `helper-item ${isActive ? 'active' : ''}`;
         
-        const statusText = isActive ? '✓ ACTIVO' : `${helper.cost}/seg`;
-        const statusClass = isActive ? 'helper-active' : 'helper-cost';
+        // Estilos para bloqueados o sin dinero
+        if (isLocked) classes += ' locked';
+        else if (!isActive && (game.helpers.length >= MAX_HELPERS || currentCPS - currentHelperCost < helper.cost)) {
+            classes += ' disabled';
+        }
         
+        div.className = classes;
+
+        // CONTENIDO DEL BOTÓN
+        let btnContent = '';
+        let statusText = '';
+        let statusClass = '';
+
+        if (isLocked) {
+            // Caso: Bloqueado por Nivel
+            statusText = `Nivel ${helper.reqLevel} Req.`;
+            statusClass = 'helper-locked-text'; // Necesitaremos este estilo
+            btnContent = '🔒';
+        } else if (isActive) {
+            // Caso: Equipado
+            statusText = '✓ EN EQUIPO';
+            statusClass = 'helper-active';
+            btnContent = '❌';
+        } else {
+            // Caso: Disponible
+            statusText = `Coste: ${helper.cost}/s`;
+            statusClass = 'helper-cost';
+            btnContent = game.helpers.length >= MAX_HELPERS ? '⛔' : '➕';
+        }
+
+        // HTML INTERNO
         div.innerHTML = `
-            <div class="helper-icon">${helper.icon}</div>
+            <div class="helper-icon" style="${isLocked ? 'filter:grayscale(1); opacity:0.5' : ''}">${helper.icon}</div>
             <div class="helper-info">
-                <h4>${helper.name}</h4>
-                <p>${helper.desc}</p>
+                <h4 style="${isLocked ? 'color:#666' : ''}">${isLocked ? '???' : helper.name}</h4>
+                <p>${isLocked ? 'Sigue acumulando energía para descubrirlo.' : helper.desc}</p>
                 <div class="${statusClass}">${statusText}</div>
             </div>
-            <button class="helper-toggle ${isActive ? 'active' : ''}" onclick="toggleHelper('${helper.id}')">
-                ${isActive ? '❌' : '✓'}
+            <button class="helper-toggle ${isActive ? 'active' : ''}" 
+                    onclick="toggleHelper('${helper.id}')" 
+                    ${isLocked ? 'disabled' : ''}>
+                ${btnContent}
             </button>
         `;
         
         container.appendChild(div);
     });
-    
-    if (container.children.length === 0) {
-        container.innerHTML = '<div style="color:#666; padding:20px; text-align:center;">Genera más energía/seg para desbloquear ayudantes...</div>';
-    }
 }
 
 // --- BUCLE PRINCIPAL ---

@@ -390,3 +390,17 @@ button.sys-btn:hover { background: #333; color: white; border-color: #555; }
     }
     #game-area { height: 60vh; }
 }
+
+/* estética de los helpers */
+.helper-item.locked {
+    background: #0a0a0a;
+    border-color: #222;
+    opacity: 0.7;
+}
+
+.helper-locked-text {
+    color: #555;
+    font-size: 0.8rem;
+    font-style: italic;
+    font-weight: bold;
+}
