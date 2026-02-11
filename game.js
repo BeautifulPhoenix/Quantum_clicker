@@ -70,6 +70,8 @@ let game = {
     buildings: {},
     achievements: [], 
     upgrades: [],
+    heavenlyUpgrades: [],
+    prestigeLevel: 0,   // Nivel TOTAL (Determina el multiplicador) <-- NUEVO
     helpers: [] // IDs de ayudantes activos
 };
 
@@ -525,7 +527,10 @@ function getClickPower() {
     if (clickHelper && game.helpers.includes(clickHelper.id)) {
         power *= clickHelper.value;
     }
-    
+        // Lógica de "Dedo Divino" (1% CPS añadido al click)
+    if (game.heavenlyUpgrades.includes('click_god')) {
+        power += (getCPS() * 0.01);
+    }
     return Math.floor(power * comboMultiplier * clickBuffMultiplier);
 }
 
@@ -567,6 +572,7 @@ function getCPS() {
 
     // Sobrecarga y Frenesí
     if (isOvercharged) total *= 5;
+    if (game.heavenlyUpgrades.includes('perm_prod')) total *= 1.10; // +10% permanente
     return total * buffMultiplier;
 }
 
@@ -1207,42 +1213,29 @@ window.doPrestige = function() {
     const modal = document.getElementById('modal-ascension');
     const PRESTIGE_BASE = 1000000;
     
-    // 1. Calcular cuánta antimateria DEBERÍAS tener
-    const totalPotentialAntimatter = Math.floor(Math.cbrt(game.totalCookiesEarned / PRESTIGE_BASE));
+    // Tu potencial total histórico
+    const totalPotential = Math.floor(Math.cbrt(game.totalCookiesEarned / PRESTIGE_BASE));
     
-    // 2. Restar la que YA tienes
-    let amountToGain = totalPotentialAntimatter - game.antimatter;
-    if (amountToGain < 0) amountToGain = 0;
-
-    // Si no hay ganancia, avisar con el nuevo modal
+    // Lo que ganas es: Potencial - Lo que ya has ganado en total (Nivel)
+    // Usamos prestigeLevel (o antimatter si es partida antigua, ver loadGame)
+    const currentLevel = game.prestigeLevel || game.antimatter;
+    let amountToGain = totalPotential - currentLevel;
+    
     if (amountToGain <= 0) {
-        const nextPoint = game.antimatter + 1;
+        // ... lógica de aviso de error (igual que tenías) ...
+        const nextPoint = currentLevel + 1;
         const energyNeed = Math.pow(nextPoint, 3) * PRESTIGE_BASE;
         const remaining = energyNeed - game.totalCookiesEarned;
-        
-        showSystemModal(
-            "ENERGÍA INSUFICIENTE", 
-            `Necesitas acumular ${formatNumber(remaining)} de energía más para generar un nuevo punto de antimateria.`, 
-            false, 
-            null
-        );
+        showSystemModal("ENERGÍA INSUFICIENTE", `Necesitas ${formatNumber(remaining)} más de energía.`, false, null);
         return;
     }
 
-    // 3. Calcular Multiplicadores
-    const currentMult = 1 + (game.antimatter * 0.1); 
-    const futureMult = 1 + ((game.antimatter + amountToGain) * 0.1);
-
-    // 4. Actualizar textos
-    document.getElementById('asc-total-cookies').innerText = formatNumber(game.totalCookiesEarned);
-    document.getElementById('asc-current-mult').innerText = `x${currentMult.toFixed(1)}`;
+    // Actualizar UI del modal
+    const nextMult = 1 + ((currentLevel + amountToGain) * 0.1);
     document.getElementById('asc-gain-antimatter').innerText = `+${formatNumber(amountToGain)}`;
-    document.getElementById('asc-new-mult').innerText = `x${futureMult.toFixed(1)}`;
-
-    // Guardar datos en el botón
-    modal.dataset.futureMult = futureMult;
+    document.getElementById('asc-new-mult').innerText = `x${nextMult.toFixed(1)}`;
+    
     modal.dataset.gain = amountToGain;
-
     modal.style.display = 'flex';
 };
 
@@ -1265,24 +1258,23 @@ window.confirmAscension = function() {
     game.helpers = [];
     isApocalypse = false;
     
-    // 2. APLICAR RECOMPENSAS
-    game.antimatter += gain;
-    game.prestigeMult = 1 + (game.antimatter * 0.1);
-
-    // 3. REINICIAR CONFIGURACIÓN EDIFICIOS
-    buildingsConfig.forEach(u => {
-        game.buildings[u.id] = 0;
-        u.currentPower = u.basePower; 
-    });
-
-    // 4. GUARDAR Y REINICIAR UI
-    saveGame();
-    renderStore();
-    renderHelpers();
-    updateUI();
-    closeAscension();
+    // 2. APLICAR RECOMPENSAS (ARREGLADO)
+    game.antimatter += gain;      // Moneda (+1)
+    game.prestigeLevel += gain;   // Nivel (+1) -> NUNCA BAJA
     
-    showNotification("🌀 UNIVERSO REINICIADO", `Has obtenido +${gain} Antimateria.`);
+    // El multi se basa en el NIVEL, no en la moneda gastable
+    game.prestigeMult = 1 + (game.prestigeLevel * 0.1); 
+
+    // 3. Reiniciar configs
+    buildingsConfig.forEach(u => { game.buildings[u.id] = 0; u.currentPower = u.basePower; });
+
+    // 4. Aplicar mejoras celestiales iniciales (Génesis, etc)
+    if (game.heavenlyUpgrades.includes('genesis')) game.cookies = 100;
+    if (game.heavenlyUpgrades.includes('starter_kit')) game.buildings['cursor'] = 10;
+
+    saveGame();
+    closeAscension();
+    openHeavenTree(); // Abrimos el árbol
 };
 
 // ==========================================
@@ -1463,6 +1455,140 @@ setInterval(saveGame, 60000);
 setTimeout(spawnAnomaly, 5000); // Primera anomalía a los 5 segundos
 
 
+
+// ==========================================
+// SISTEMA DE ÁRBOL CELESTIAL
+// ==========================================
+
+// Configuración de Nodos (ID, Nombre, Icono, Coste, Posición X/Y, Requisito)
+// COORDENADAS COMPACTAS: Centro X = 350
+const heavenlyConfig = [
+    // RAÍZ (Arriba centro)
+    { id: 'genesis', name: 'Génesis', icon: '👶', cost: 1, x: 350, y: 30, desc: 'Comienza con 100 galletas tras ascender.', parents: [] },
+    
+    // RAMA IZQUIERDA (Producción Pasiva)
+    { id: 'starter_kit', name: 'Kit Inicial', icon: '📦', cost: 2, x: 200, y: 120, desc: 'Empiezas con 10 Nanobots gratis.', parents: ['genesis'] },
+    { id: 'perm_prod', name: 'Aura Eterna', icon: '⏳', cost: 10, x: 120, y: 220, desc: '+10% Producción Pasiva PERMANENTE.', parents: ['starter_kit'] },
+    { id: 'offline_god', name: 'Cronos', icon: '💤', cost: 50, x: 200, y: 320, desc: 'Gana el 100% de producción offline (antes 50%).', parents: ['perm_prod'] },
+
+    // RAMA DERECHA (Activa / Clicks)
+    { id: 'lucky_strike', name: 'Suerte Cósmica', icon: '🍀', cost: 3, x: 500, y: 120, desc: 'Las anomalías doradas aparecen un 10% más.', parents: ['genesis'] },
+    { id: 'click_god', name: 'Dedo Divino', icon: '👆', cost: 15, x: 580, y: 220, desc: '+1% de tu CPS se añade a tu click base.', parents: ['lucky_strike'] },
+    { id: 'wrath_control', name: 'Diplomacia', icon: '🤝', cost: 100, x: 500, y: 320, desc: 'Las anomalías rojas tienen 50% menos chance de efecto negativo.', parents: ['click_god'] },
+
+    // RAMA CENTRAL (Poder Puro - Abajo del todo)
+    { id: 'synergy_master', name: 'Maestro de Sinergia', icon: '🔗', cost: 500, x: 350, y: 450, desc: 'Todas las mejoras de sinergia son un 50% más efectivas.', parents: ['offline_god', 'wrath_control'] }
+];
+
+// Variable para guardar las mejoras celestiales compradas
+// Asegúrate de añadir "heavenlyUpgrades: []" al objeto "game" inicial al principio del archivo.
+
+window.openHeavenTree = function() {
+    document.getElementById('modal-heaven').style.display = 'flex';
+    document.getElementById('heaven-antimatter').innerText = formatNumber(game.antimatter);
+    renderHeavenTree();
+};
+
+window.closeHeaven = function() {
+    document.getElementById('modal-heaven').style.display = 'none';
+    sfxClick(); // Un sonidito al cerrar queda bien
+};
+
+function renderHeavenTree() {
+    const container = document.getElementById('heaven-nodes');
+    const canvas = document.getElementById('heaven-canvas');
+    const tooltip = document.getElementById('heaven-tooltip');
+    const ctx = canvas.getContext('2d');
+    
+    // Configuración compacta
+    const treeW = 800; const treeH = 600;
+    canvas.width = treeW; canvas.height = treeH;
+    container.style.width = treeW + 'px'; container.style.height = treeH + 'px';
+    ctx.clearRect(0, 0, treeW, treeH);
+    container.innerHTML = '';
+
+    // Actualizar cabecera con Nivel y Moneda
+    document.getElementById('heaven-antimatter').innerText = formatNumber(game.antimatter);
+    document.getElementById('heaven-level').innerText = formatNumber(game.prestigeLevel);
+
+    heavenlyConfig.forEach(node => {
+        const isBought = game.heavenlyUpgrades.includes(node.id);
+        const isAvailable = !isBought && (node.parents.length === 0 || node.parents.some(pid => game.heavenlyUpgrades.includes(pid)));
+        
+        // DIBUJAR LÍNEAS
+        if (node.parents.length > 0) {
+            node.parents.forEach(pid => {
+                const parent = heavenlyConfig.find(p => p.id === pid);
+                if (parent) {
+                    ctx.beginPath();
+                    ctx.moveTo(parent.x + 22, parent.y + 22);
+                    ctx.lineTo(node.x + 22, node.y + 22);
+                    ctx.strokeStyle = isBought ? '#651fff' : (isAvailable ? '#ffd700' : '#333');
+                    ctx.lineWidth = isBought ? 3 : 1;
+                    ctx.stroke();
+                }
+            });
+        }
+
+        // NODO
+        const div = document.createElement('div');
+        div.className = `heaven-node ${isBought ? 'bought' : (isAvailable ? 'available' : 'locked')}`;
+        div.style.left = node.x + 'px'; div.style.top = node.y + 'px';
+        div.innerHTML = node.icon;
+        
+        // --- EVENTOS DEL TOOLTIP (SIN CSS) ---
+        div.onmouseenter = (e) => {
+            const status = isBought ? "✅ COMPRADO" : (isAvailable ? `CLICK PARA COMPRAR` : "🔒 BLOQUEADO");
+            const costTxt = isBought ? "" : `\nCoste: ${formatNumber(node.cost)} AM`;
+            
+            tooltip.innerHTML = `<strong style="color:#b388ff">${node.name}</strong><br>${node.desc}<br><br><span style="color:${isAvailable?'#ffd700':'#888'}">${status}${costTxt}</span>`;
+            tooltip.style.display = 'block';
+            
+            // Posicionar tooltip cerca del ratón o del nodo (ajustado al contenedor padre modal-box)
+            const boxRect = document.querySelector('.heaven-modal-box').getBoundingClientRect();
+            const nodeRect = div.getBoundingClientRect();
+            
+            // Calculamos posición relativa a la caja modal
+            let top = nodeRect.bottom - boxRect.top + 10;
+            let left = nodeRect.left - boxRect.left - 100; // Centrado
+            
+            tooltip.style.top = top + 'px';
+            tooltip.style.left = left + 'px';
+        };
+
+        div.onmouseleave = () => { tooltip.style.display = 'none'; };
+        
+        div.onclick = () => buyHeavenlyUpgrade(node);
+        container.appendChild(div);
+    });
+}
+
+function buyHeavenlyUpgrade(node) {
+    if (game.heavenlyUpgrades.includes(node.id)) return; // Ya comprado
+    
+    // Chequear requisitos
+    const isAvailable = node.parents.length === 0 || node.parents.some(pid => game.heavenlyUpgrades.includes(pid));
+    if (!isAvailable) return;
+
+    if (game.antimatter >= node.cost) {
+        sfxBuy();
+        game.antimatter -= node.cost;
+        game.heavenlyUpgrades.push(node.id);
+        
+        document.getElementById('heaven-antimatter').innerText = formatNumber(game.antimatter);
+        renderHeavenTree();
+        saveGame(); // Guardar progreso importante
+    } else {
+        showSystemModal("ENERGÍA CÓSMICA INSUFICIENTE", "Necesitas más Antimateria para fusionar esta realidad.", false, null);
+    }
+}
+
+// Función final que se llama para volver al juego
+window.finishAscension = function() {
+    closeHeaven();
+    // Aquí podrías añadir una animación de "Big Bang"
+    location.reload(); // Recargar para aplicar cambios limpios
+};
 
 
 

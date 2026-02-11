@@ -446,6 +446,15 @@ button.sys-btn:hover { background: #333; color: white; border-color: #555; }
     #game-area { height: 60vh; }
 }
 
+/* OCULTAR BOTÓN DE SOBRECARGA SI HAY UN MODAL ABIERTO */
+.modal-overlay[style*="display: flex"] ~ #game-area #btn-overcharge {
+    display: none !important;
+}
+
+/* Opcional: Asegurar que los modales siempre estén encima */
+.modal-overlay {
+    z-index: 10000 !important; /* Muy por encima del botón */
+}
 
 /* --- NOTIFICACIONES DE ANOMALÍAS (ARRIBA) --- */
 #anomaly-notifications {
@@ -491,3 +500,103 @@ button.sys-btn:hover { background: #333; color: white; border-color: #555; }
     80% { opacity: 1; transform: translateY(0); } /* Se queda quieto */
     100% { opacity: 0; transform: translateY(-30px); } /* Desaparece hacia arriba */
 }
+
+/* --- ÁRBOL CELESTIAL --- */
+.heaven-node {
+    position: absolute;
+    width: 50px; height: 50px;
+    background: #222;
+    border: 2px solid #555;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: 0.3s;
+    z-index: 2;
+    box-shadow: 0 0 10px rgba(0,0,0,0.8);
+}
+
+.heaven-node:hover { transform: scale(1.2); z-index: 10; border-color: white; }
+
+/* ESTADOS DEL NODO */
+.heaven-node.locked { filter: grayscale(1); opacity: 0.5; cursor: not-allowed; }
+.heaven-node.available { border-color: #ffd700; background: #332200; box-shadow: 0 0 15px #ffd700; animation: pulseNode 2s infinite; }
+.heaven-node.bought { background: #651fff; border-color: #00e5ff; box-shadow: 0 0 20px #651fff; }
+
+@keyframes pulseNode { 0% { box-shadow: 0 0 5px #ffd700; } 50% { box-shadow: 0 0 20px #ffd700; } 100% { box-shadow: 0 0 5px #ffd700; } }
+
+/* Tooltip especial para el árbol */
+.heaven-node:hover::after {
+    content: attr(data-desc);
+    position: absolute;
+    bottom: 60px; left: 50%; transform: translateX(-50%);
+    width: 200px; background: rgba(0,0,0,0.9); border: 1px solid #b388ff;
+    color: #fff; padding: 10px; font-size: 0.8rem; border-radius: 4px;
+    pointer-events: none; z-index: 20; text-align: center;
+}
+
+
+/* --- ÁRBOL CELESTIAL V2 --- */
+.heaven-modal-box {
+    width: 95%; height: 90%; max-width: 1100px;
+    background: radial-gradient(circle, #1a0b2e 0%, #000 100%);
+    border: 2px solid #b388ff; border-radius: 12px;
+    display: flex; flex-direction: column; position: relative;
+    box-shadow: 0 0 50px rgba(124, 77, 255, 0.4);
+}
+
+.heaven-header {
+    padding: 15px 25px; background: rgba(0,0,0,0.9);
+    border-bottom: 1px solid #444; display: flex; justify-content: space-between; align-items: center;
+    z-index: 20; /* Por encima del scroll */
+}
+
+.close-heaven-btn {
+    background: none; border: none; color: #888; font-size: 2.5rem;
+    cursor: pointer; line-height: 1; transition: 0.2s;
+}
+.close-heaven-btn:hover { color: white; }
+
+#heaven-tree-container {
+    flex: 1; position: relative; overflow: auto;
+    background: #050505 url('https://www.transparenttextures.com/patterns/stardust.png');
+    cursor: grab;
+}
+
+#heaven-nodes { position: absolute; top: 0; left: 0; z-index: 5; }
+#heaven-canvas { position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none; }
+
+.heaven-node {
+    position: absolute; width: 44px; height: 44px;
+    border-radius: 50%; border: 2px solid #555; background: #222;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem; cursor: pointer; transition: 0.2s;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+.heaven-node:hover { transform: scale(1.2); border-color: white; z-index: 100; }
+.heaven-node.bought { background: #651fff; border-color: #00e5ff; box-shadow: 0 0 20px #651fff; }
+.heaven-node.available { border-color: #ffd700; animation: pulseNode 1.5s infinite; }
+.heaven-node.locked { opacity: 0.3; filter: grayscale(1); cursor: not-allowed; }
+
+@keyframes pulseNode { 0% { box-shadow: 0 0 5px #ffd700; } 50% { box-shadow: 0 0 20px #ffd700; } }
+
+/* --- TOOLTIP FLOTANTE JS --- */
+.heaven-tooltip {
+    position: absolute; 
+    display: none; /* Se activa con JS */
+    width: 250px; padding: 15px;
+    background: rgba(10, 8, 20, 0.98);
+    border: 1px solid #b388ff; border-radius: 8px;
+    color: #fff; font-size: 0.85rem; line-height: 1.4; text-align: center;
+    pointer-events: none; z-index: 1000; /* POR ENCIMA DE TODO */
+    box-shadow: 0 10px 30px rgba(0,0,0,1);
+    white-space: pre-wrap;
+}
+
+.reincarnate-btn {
+    padding: 12px 30px; background: #651fff; color: white; font-weight: bold;
+    border: none; border-radius: 4px; cursor: pointer; font-size: 1.1rem;
+    box-shadow: 0 0 15px #651fff; transition: 0.3s;
+}
+.reincarnate-btn:hover { background: #7c4dff; box-shadow: 0 0 25px #7c4dff; }
+.heaven-footer { padding: 15px; text-align: center; background: rgba(0,0,0,0.9); border-top: 1px solid #444; z-index: 20; }
