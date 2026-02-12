@@ -1007,3 +1007,108 @@ button.sys-btn:hover { background: #333; color: white; border-color: #555; }
 
 
 
+/* ==========================================
+   📱 MODO MÓVIL (RESPONSIVE)
+   ========================================== */
+
+/* PROHIBIDO EL ZOOM EN TODO EL JUEGO */
+* {
+    touch-action: manipulation; /* La clave mágica: desactiva el zoom por doble tap */
+    -webkit-tap-highlight-color: transparent; /* Quita el destello azul al pulsar */
+    user-select: none; /* Evita seleccionar texto al pulsar rápido */
+}
+
+@media (max-width: 768px) {
+
+    /* 1. CAMBIO DE ESTRUCTURA: DE FILA A COLUMNA */
+    body {
+        flex-direction: column; /* Pone el juego arriba y la tienda abajo */
+        overflow: hidden; /* Evita scrolls raros de la página entera */
+    }
+
+    /* 2. ZONA DE JUEGO (LA BOLA 3D) */
+    #game-area {
+        width: 100%;
+        height: 40vh; /* Ocupa el 40% de arriba */
+        border-right: none;
+        border-bottom: 1px solid #00ff88; /* Separador visual */
+        z-index: 1; /* Por debajo de la tienda si hay conflicto */
+    }
+
+    /* Ajustamos el canvas para que no se salga */
+    canvas#three-canvas {
+        width: 100% !important;
+        height: 100% !important;
+    }
+
+    /* Los contadores grandes (Score y CPS) */
+    #score-container {
+        top: 10px; /* Más pegado al borde */
+        transform: translateX(-50%) scale(0.9); /* Un pelín más pequeño */
+    }
+
+    #score { font-size: 2.5rem; }
+    #cps-display { font-size: 0.9rem; }
+
+    /* 3. ZONA DE TIENDA (ABAJO) */
+    #store-area {
+        width: 100%; /* Ocupa todo el ancho */
+        height: 60vh; /* Ocupa el 60% de abajo (el resto) */
+        border-left: none;
+        padding: 10px;
+        box-shadow: 0 -5px 20px rgba(0,0,0,0.5); /* Sombra hacia arriba */
+        
+        /* Aseguramos que los botones de abajo se vean */
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Ajuste de listas para que se pueda hacer scroll bien con el dedo */
+    #buildings-list, #helpers-list {
+        flex: 1;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch; /* Scroll suave en iPhone */
+    }
+
+    /* Botones más grandes para dedos gordos */
+    .building-item, .helper-item {
+        padding: 10px; /* Más área táctil */
+        min-height: 50px;
+    }
+    
+    /* El panel de mejoras (cajitas de arriba) */
+    #upgrades-panel {
+        overflow-x: auto; /* Scroll horizontal si hay muchas */
+        flex-wrap: nowrap; /* Que no salten de línea, mejor scroll lateral */
+        justify-content: flex-start;
+        padding-bottom: 5px;
+    }
+    
+    .upgrade-crate {
+        min-width: 40px; /* Asegura tamaño mínimo */
+        margin-right: 5px;
+    }
+
+    /* 4. NOTIFICACIONES Y POPUPS */
+    #anomaly-notifications {
+        top: 10%; /* Bajarlo un poco para que no tape el contador */
+        width: 90%;
+    }
+    
+    .anomaly-popup {
+        font-size: 1rem; /* Texto más pequeño */
+        padding: 8px 15px;
+    }
+
+    /* Botones de sistema (Guardar, Reset...) */
+    #save-controls {
+        grid-template-columns: repeat(4, 1fr); /* Mantener 4 columnas */
+        gap: 8px;
+        padding-bottom: 20px; /* Espacio extra abajo para móviles modernos (barra home) */
+    }
+    
+    button.sys-btn {
+        height: 40px; /* Botones más altos para pulsar fácil */
+        font-size: 1rem; /* Iconos más grandes */
+    }
+}

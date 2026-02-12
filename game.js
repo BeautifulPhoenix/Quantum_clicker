@@ -2305,4 +2305,21 @@ window.importSave = function() {
     }
 }
 
+// Añadir soporte TOUCH además de CLICK
+canvas.addEventListener('touchstart', (e) => {
+    // Evita que el navegador intente hacer scroll o zoom al tocar el canvas
+    e.preventDefault(); 
+    
+    // Simula el click para tu lógica de juego
+    // (Cogemos el primer dedo que toca la pantalla)
+    const touch = e.touches[0];
+    const mouseEvent = new MouseEvent("mousedown", {
+        clientX: touch.clientX,
+        clientY: touch.clientY
+    });
+    canvas.dispatchEvent(mouseEvent);
+}, { passive: false });
+
+
+
 window.game = game;
