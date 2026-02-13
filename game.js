@@ -1955,59 +1955,66 @@ function checkAvailability() {
 function doClickLogic(cx, cy) {
     sfxClick();
     
-    // 1. AUMENTAR COMBO
+    // 1. AUMENTAR COMBO (Con límite dinámico por Protocolo Maestro)
+    // Si tienes el Protocolo Maestro de la Dra. Flux, el límite sube a x10.0
+    const maxCombo = game.upgrades.includes('upg_master_h_combo') ? 10.0 : 5.0;
+    
     comboMultiplier += 0.05; 
-    if(comboMultiplier > 5.0) comboMultiplier = 5.0; 
+    if(comboMultiplier > maxCombo) comboMultiplier = maxCombo; 
     comboTimer = 2.0; 
     
-    // Actualizar UI del combo (Visual)
     const comboEl = document.getElementById('combo-display');
-    if (comboEl) { // Protección por si no existe aún
+    if (comboEl) {
         comboEl.style.opacity = 1;
-        comboEl.style.transform = `scale(${1 + comboMultiplier/10})`; // Pequeño efecto de latido visual
+        comboEl.style.transform = `scale(${1 + comboMultiplier/10})`;
         comboEl.innerText = `COMBO x${comboMultiplier.toFixed(2)}`;
     }
 
     // 2. CALCULAR DAÑO BASE
-    // Nota: getClickPower() ya incluye el multiplicador de combo actual
     let val = getClickPower();
     let isCrit = false;
 
-    // --- CÁLCULO DE CRÍTICO ---
+    // --- CÁLCULO DE CRÍTICO (Con mejora de Maestro de Sgt. Kael) ---
     let critChance = 0;
-    
-    // Mejora Cosmos: Punto Débil
     if (game.heavenlyUpgrades.includes('crit_master')) critChance += 0.05;
     
-    // Ayudante: Sargento Kael (ID: h_crit)
-    // Comprobamos directamente si tenemos el ID en el array de helpers comprados
-    if (game.helpers.includes('h_crit')) critChance += 0.10;
+    // Si tienes el Protocolo Maestro de Kael, el crítico sube al 25%
+    if (game.upgrades.includes('upg_master_h_crit')) {
+        critChance = 0.25; 
+    } else if (game.helpers.includes('h_crit')) {
+        critChance += 0.10;
+    }
 
-    // Tirada de dados
     if (Math.random() < critChance) {
         isCrit = true;
-        val *= 10; // ¡Daño masivo!
-        
-        // Sonido especial (Agudo y rápido)
+        val *= 10; 
         playTone(600, 'square', 0.1, 0.2); 
-        
-        // Efecto visual extra: Shake de cámara manual
         camera.position.x += (Math.random() - 0.5) * 0.5;
         camera.position.y += (Math.random() - 0.5) * 0.5;
     }
 
-    // 3. APLICAR RESULTADO
+    // 3. APLICAR RESULTADO Y ESTADÍSTICAS
     game.cookies += val;
     game.totalCookiesEarned += val;
     
-    // --- AQUÍ ESTABA EL ERROR DE LAS ESTADÍSTICAS ---
-    if (!game.totalClicks) game.totalClicks = 0; // Protección inicial
-    game.totalClicks++; // Esto actualiza la estadística del menú
-    game.clickCount++;  // Esto mantiene la lógica interna de logros
-    // -----------------------------------------------
-    
+    if (!game.totalClicks) game.totalClicks = 0;
+    game.totalClicks++; 
+    game.clickCount++;  
+
+    // ==========================================
+    // 🔵 EL EVENTO DE LA PERLA AZUL (¡AQUÍ!)
+    // ==========================================
+    if (game.totalClicks >= 10000 && !game.pearls.includes('blue')) {
+        unlockPearl('blue');
+        showSystemModal(
+            "🔵 PERLA AZUL OBTENIDA",
+            "Tu persistencia ha fracturado el espacio-tiempo. Has condensado el esfuerzo de 10,000 pulsos en la Perla del Cronos (Clicks x50).",
+            false,
+            null
+        );
+    }
+
     // 4. TEXTO FLOTANTE
-    // Pasamos el 4º argumento 'isCrit' a la función de texto
     if (isCrit) {
         createFloatingText(cx, cy, `¡CRÍTICO! +${formatNumber(val)}`, true); 
     } else {
@@ -2016,6 +2023,9 @@ function doClickLogic(cx, cy) {
     
     updateUI();
 }
+
+
+
 
 function createFloatingText(x, y, txt) {
     const el = document.createElement('div');
@@ -3154,7 +3164,6 @@ function updateStats() {
     const totalEnergy = game.totalCookiesEarned || 0;
     const clicks = game.totalClicks || 0;
     const anomalies = game.anomaliesClicked || 0;
-    const prestige = game.prestigeLevel || 0;
 
     // Cálculo de tiempo
     let h = Math.floor(timePlayed / 3600);
@@ -3162,7 +3171,6 @@ function updateStats() {
     let s = Math.floor(timePlayed % 60);
     const timeString = `${h}h ${m}m ${s}s`;
 
-    // Formateo de números (usa tu formatNumber si existe, o local)
     const format = (typeof formatNumber === 'function') ? formatNumber : (n) => n.toLocaleString();
     
     const html = `
@@ -3170,12 +3178,13 @@ function updateStats() {
         <p>Energía Total: <span style="color:#ffd700">${format(totalEnergy)}</span></p>
         <p>Clicks Totales: <span>${clicks.toLocaleString()}</span></p>
         <p>Anomalías detectadas: <span style="color:#ff0055">${anomalies}</span></p>
-        
     `;
     
     const content = document.getElementById('stats-content');
     if (content) content.innerHTML = html;
 }
+
+
 
 // 5. EXPONER FUNCIONES AL HTML (¡ESTO ES LO QUE FALTABA!)
 window.openStats = openStats;

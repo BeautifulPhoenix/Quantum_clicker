@@ -49,7 +49,12 @@ game.prestigeMult = 100; updateUI();
 
 
 /////////////////////
+simula que has dado 10000 clicks
 
+
+
+
+game.totalClicks = 10000;
 
 
 
