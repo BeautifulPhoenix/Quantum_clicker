@@ -603,107 +603,144 @@ function spawnParticles(pos) {
 function update3D() {
     const time = Date.now() * 0.002;
     const cps = getCPS();
+    const totalWatts = game.totalCookiesEarned;
 
     // ===============================================
     // 🛑 1. LÓGICA ESPECIAL DE LA INTRO
     // ===============================================
     if (isIntroActive) {
-        // Si hay polvo estelar (intro), que gire suavemente
         if (typeof introParticlesMesh !== 'undefined' && introParticlesMesh) {
             introParticlesMesh.rotation.y += 0.002;
             introParticlesMesh.rotation.z += 0.001;
         }
-
-        // Actualizamos las partículas de click (chispas)
         updateParticles(); 
-        
-        // Renderizamos y SALIMOS. No queremos que el código de abajo
-        // cambie los colores de la bola ni mueva las estrellas.
         composer.render();
         return; 
     }
 
     // ===============================================
-    // 🚀 2. JUEGO NORMAL (SOLO SI NO HAY INTRO)
+    // 🚀 2. JUEGO NORMAL - EFECTOS DINÁMICOS
     // ===============================================
 
-    // A. ROTACIÓN DINÁMICA
-    const rotSpeed = 0.005 + Math.min(0.1, cps * 0.00001);
+    // A. VELOCIDAD DE ROTACIÓN (Escala con el poder)
+    const rotSpeed = 0.005 + Math.min(0.2, cps * 0.00001);
     mainObject.rotation.y += rotSpeed;
     mainObject.rotation.x += rotSpeed * 0.5;
-    glowMesh.rotation.y -= rotSpeed;
-    
-    // B. LÓGICA DE COLORES Y EVOLUCIÓN
+    glowMesh.rotation.y -= rotSpeed * 1.5;
+
+    // B. LÓGICA DE ESTADOS Y APOCALIPSIS
     if (isApocalypse) {
-        // MODO APOCALIPSIS
+        // --- EFECTO: SINGULARIDAD ROJA ---
+        const pulseFreq = 10 + Math.sin(time) * 5; // Latido frenético
+        const pulseScale = 1 + Math.sin(time * pulseFreq) * 0.15;
+        mainObject.scale.setScalar(pulseScale);
+
         mainObject.material.color.setHex(0xff0000); 
-        mainObject.material.emissive.setHex(0x550000);
-        glowMesh.material.color.setHex(0xff3300);   
-        if(scene.fog) scene.fog.color.setHex(0x220000);           
-        mainObject.scale.setScalar(1 + Math.sin(time * 5) * 0.05); 
+        mainObject.material.emissive.setHex(0xff0000);
+        mainObject.material.emissiveIntensity = 2.0 + Math.sin(time * 20) * 1.0; // Parpadeo violento
+        
+        glowMesh.material.color.setHex(0xff3300);
+        glowMesh.scale.setScalar(pulseScale * 1.1 + Math.random() * 0.05); // Vibración errática
+
+        if(scene.fog) scene.fog.color.setHex(0x110000);
+
+        // --- DISTORSIÓN DE CÁMARA (SHAKE CONSTANTE) ---
+        camera.position.x += (Math.random() - 0.5) * 0.05;
+        camera.position.y += (Math.random() - 0.5) * 0.05;
+
     } else {
-        // MODO NORMAL: EVOLUCIÓN
-        let targetColor = new THREE.Color(0x00ff88); // Base: Verde
+        // --- MODO NORMAL: EVOLUCIÓN ---
+        let targetColor = new THREE.Color(0x00ff88); 
         let targetEmissive = new THREE.Color(0x004422);
         let targetGlow = new THREE.Color(0x7c4dff);
 
-        // FASE KILOWATT (1,000 W) -> Naranja
-        if (game.totalCookiesEarned >= 1000) {
-            targetColor.setHex(0xffaa00);
-            targetEmissive.setHex(0xff4400);
-            targetGlow.setHex(0xffcc00);
+        // Fases de evolución
+        if (totalWatts >= 1000) { // Kilowatt
+            targetColor.setHex(0xffaa00); targetEmissive.setHex(0xff4400); targetGlow.setHex(0xffcc00);
         }
-        // FASE MEGAWATT (1M W) -> Azul Cyan
-        if (game.totalCookiesEarned >= 1000000) {
-            targetColor.setHex(0x00e5ff);
-            targetEmissive.setHex(0x0044aa);
-            targetGlow.setHex(0x00ffff);
+        if (totalWatts >= 1000000) { // Megawatt
+            targetColor.setHex(0x00e5ff); targetEmissive.setHex(0x0044aa); targetGlow.setHex(0x00ffff);
         }
-        // FASE GIGAWATT (1B W) -> Violeta Singularidad
-        if (game.totalCookiesEarned >= 1000000000) {
-            targetColor.setHex(0x9900ff);
-            targetEmissive.setHex(0x220044);
-            targetGlow.setHex(0xff00ff);
+        if (totalWatts >= 1000000000) { // Gigawatt
+            targetColor.setHex(0x9900ff); targetEmissive.setHex(0x220044); targetGlow.setHex(0xff00ff);
         }
 
-        // Transición suave (Lerp)
         mainObject.material.color.lerp(targetColor, 0.05);
         mainObject.material.emissive.lerp(targetEmissive, 0.05);
         glowMesh.material.color.lerp(targetGlow, 0.05);
         
-        // El fog vuelve a negro si salimos del apocalipsis
         if(scene.fog) scene.fog.color.lerp(new THREE.Color(0x000000), 0.1);
 
-        // Latido suave
-        const pulse = 1 + Math.sin(time * 2) * 0.02;
+        // Latido rítmico
+        const pulse = 1 + Math.sin(time * 2) * 0.03;
         mainObject.scale.setScalar(pulse);
+        mainObject.material.emissiveIntensity = 0.6 + Math.sin(time * 3) * 0.3;
     }
     
-    // C. FONDO DE ESTRELLAS (Solo se mueven si el juego ha empezado)
+    // C. FONDO DE ESTRELLAS: ATRACCIÓN GRAVITATORIA
     if (starMesh && starMesh.geometry) {
         const positions = starMesh.geometry.attributes.position.array;
-        const starSpeed = 0.05 + Math.min(2.0, cps * 0.0005); 
+        const starSpeed = isApocalypse ? 0.5 : 0.05 + Math.min(1.5, cps * 0.0005); 
         
-        for(let i=2; i<positions.length; i+=3) {
-            positions[i] += starSpeed;
-            if(positions[i] > 20) positions[i] = -40; 
+        for(let i=0; i < positions.length; i+=3) {
+            // Movimiento hacia adelante (Z)
+            positions[i+2] += starSpeed;
+
+            // Si estamos en Apocalipsis, las estrellas son "succionadas" hacia el centro
+            if (isApocalypse) {
+                positions[i] *= 0.98;     // Atracción en X
+                positions[i+1] *= 0.98;   // Atracción en Y
+            }
+
+            // Reposicionamiento si salen del rango
+            if(positions[i+2] > 20) {
+                positions[i+2] = -40;
+                // Si es apocalipsis, al reaparecer vuelven a estar lejos del centro
+                if (isApocalypse) {
+                    positions[i] = (Math.random() - 0.5) * 60;
+                    positions[i+1] = (Math.random() - 0.5) * 60;
+                }
+            }
         }
         starMesh.geometry.attributes.position.needsUpdate = true;
     }
 
-    // D. PARTÍCULAS
-    updateParticles();
+    // D. DEFORMACIÓN GEOMÉTRICA (EL NÚCLEO "VIVO")
+    // Solo ocurre en Gigawatt o Apocalipsis
+    if (totalWatts >= 1000000000 || isApocalypse) {
+        const vertices = mainObject.geometry.attributes.position.array;
+        const amp = isApocalypse ? 0.15 : 0.05;
+        const freq = isApocalypse ? 5.0 : 2.0;
 
-    // E. RENDERIZADO FINAL
-    camera.position.lerp(new THREE.Vector3(0,0,8), 0.1);
-    
-    // Variación suave de emisión
-    if (!isApocalypse) {
-        mainObject.material.emissiveIntensity = 0.5 + Math.sin(time) * 0.2;
+        for (let i = 0; i < vertices.length; i += 3) {
+            // Creamos una onda que deforma la esfera según el tiempo
+            const wave = Math.sin(time * freq + vertices[i] + vertices[i+1]) * amp;
+            // No modificamos el buffer original para no perder la forma, 
+            // pero aplicamos una escala interna visual mediante el shader o escalando el grupo.
+        }
+        // Nota: Para deformar vértices reales necesitas guardar la posición original.
+        // Como alternativa épica, variamos el tamaño del wireframe aleatoriamente:
+        glowMesh.scale.setScalar(mainObject.scale.x * (1.1 + Math.sin(time * 4) * 0.05));
     }
-    
+
+    // E. POST-PROCESADO (BLOOM DINÁMICO)
+    if (composer.passes[1]) { // Asumiendo que UnrealBloomPass es el pase 1
+        const bloom = composer.passes[1];
+        if (isApocalypse) {
+            bloom.strength = 2.0 + Math.sin(time * 10) * 0.5;
+            bloom.radius = 0.8;
+        } else {
+            bloom.strength = 1.0 + (totalWatts > 1000000 ? 0.5 : 0);
+        }
+    }
+
+    // F. RENDERIZADO FINAL
+    updateParticles();
+    camera.position.lerp(new THREE.Vector3(0,0,8), 0.05);
     composer.render();
 }
+
+
 
 // Función auxiliar para limpiar el código (Pon esto fuera)
 function updateParticles() {
@@ -1159,58 +1196,79 @@ function recalculateStats() {
     });
 }
 
-// FUNCIONES EXPUESTAS PARA BOTONES HTML
+// ==========================================
+// ⚙️ SISTEMA DE COMPRA DE MEJORAS (CORREGIDO)
+// ==========================================
+
+// 1. Diccionario de advertencias para la cadena Omega
+// 1. Diccionario de advertencias (Lore de Protocolo Omega)
+const omegaWarnings = {
+    'protocol-omega': "⚠️ Detectada fluctuación térmica inusual en el núcleo. ¿Continuar?",
+    'omega-phase-2': "🔉 Los técnicos informan de voces en la estática. Detente ahora.",
+    'omega-phase-3': "🌀 ADVERTENCIA: Integridad estructural al 60%. ¡RETROCEDE!",
+    'omega-phase-4': "🚨 ¡PELIGRO! El núcleo está drenando energía de dimensiones adyacentes.",
+    'omega-final': "👁️ El Protocolo Omega está a punto de concluir. Esto cambiará tu universo para siempre. ¿Proceder?"
+};
+
+// 2. Función para comprar estructuras
 window.buyBuilding = function(id) {
-    const cost = getCost(id);
+    const cost = getCost(id); 
+    
     if (game.cookies >= cost) {
-        sfxBuy();
+        sfxBuy(); 
         game.cookies -= cost;
-        game.buildings[id]++;
-        renderStore(); 
-        renderHelpers(); // Actualizar helpers disponibles
-        updateUI();
-    }
-};
-
-window.buyUpgrade = function(upgradeId, cost) {
-    if (upgradeId === 'omega-final') {
-    // En vez de isApocalypse = true, ahora desbloqueamos la perla
-    unlockPearl('red');
-
-    showSystemModal(
-        "🔴 PERLA ANGULAR OBTENIDA", 
-        "El Protocolo Omega ha condensado toda la entropía en una joya física.\n\nEquípala en el Relicario para desatar su poder (y el Apocalipsis).", 
-        false, null
-    );
-    // (Borra el isApocalypse = true de aquí si lo tenías)
-}
-
-    if (game.cookies >= cost) {
-        sfxBuy();
-        game.cookies -= cost;
-        game.upgrades.push(upgradeId);
         
-        // --- LÓGICA DE ACTIVACIÓN DEL APOCALIPSIS ---
-        // Solo se activa cuando compras LA ÚLTIMA mejora de la cadena
-        if (upgradeId === 'omega-final') {
-            isApocalypse = true;
-            
-            // Sonido dramático (Doble tono grave)
-            playTone(100, 'sawtooth', 1.0, 0.5);
-            setTimeout(() => playTone(80, 'sawtooth', 2.0, 0.5), 500);
-            
-            showSystemModal(
-                "👁️ LA REALIDAD HA CAÍDO", 
-                "Has roto los sellos de contención.\nEl Vacío te observa.\n\n(Las anomalías ahora pueden ser peligrosas... o inmensamente poderosas)", 
-                false, null
-            );
-        }
-
+        if (!game.buildings[id]) game.buildings[id] = 0;
+        game.buildings[id]++;
+        
+        // Actualizar todo el sistema
         recalculateStats();
-        renderStore();
+        renderStore(); 
+        renderHelpers(); 
         updateUI();
     }
 };
+
+// 3. LA PIEZA QUE TE FALTABA: Función principal de mejoras
+window.buyUpgrade = function(upgradeId, cost) {
+    if (game.cookies < cost) {
+        return;
+    }
+
+    // Si la mejora es "Omega", pedimos confirmación con el mensaje del diccionario
+    if (omegaWarnings[upgradeId]) {
+        showSystemModal(
+            "ADVERTENCIA DE SEGURIDAD", 
+            omegaWarnings[upgradeId], 
+            true, // isConfirm: activa el botón Cancelar
+            () => executeUpgradePurchase(upgradeId, cost) // Si acepta, ejecuta
+        );
+    } else {
+        // Si es una mejora normal, compra directa
+        executeUpgradePurchase(upgradeId, cost);
+    }
+};
+
+// 4. Función interna que realiza la transacción física
+function executeUpgradePurchase(upgradeId, cost) {
+    sfxBuy();
+    game.cookies -= cost;
+    game.upgrades.push(upgradeId);
+
+    // Lógica especial para el final
+    if (upgradeId === 'omega-final') {
+        unlockPearl('red');
+        showSystemModal(
+            "🔴 PERLA ANGULAR OBTENIDA", 
+            "El Protocolo Omega ha condensado toda la entropía en una joya física.\n\nEquípala en el Relicario para desatar su verdadero poder.", 
+            false, null
+        );
+    }
+
+    recalculateStats();
+    renderStore();
+    updateUI();
+}
 
 
 // --- MISIÓN PERLA VERDE: SINCRONIZACIÓN DE ÉLITE ---
@@ -1534,17 +1592,14 @@ function updateUI() {
 
 function renderStore() {
     upgradesEl.innerHTML = '';
-    buildingsEl.innerHTML = ''; // Limpiamos la lista de edificios
-    let anyUp = false; // Variable para saber si hay mejoras disponibles
+    buildingsEl.innerHTML = ''; 
+    let anyUp = false; 
 
-    // ===============================================
     // 1. MEJORAS DE EDIFICIOS (MK-1, MK-2...)
-    // ===============================================
     buildingsConfig.forEach(b => {
         const count = game.buildings[b.id] || 0;
         milestones.forEach((th, i) => {
             const uid = `${b.id}-${th}`;
-            // Si tienes los edificios necesarios y NO has comprado la mejora
             if (count >= th && !game.upgrades.includes(uid)) {
                 anyUp = true;
                 const cost = b.baseCost * 20 * (i + 1) * th;
@@ -1561,85 +1616,82 @@ function renderStore() {
         });
     });
 
-    // ===============================================
-    // 2. MEJORAS ESPECIALES (CÓDIGO ACTUALIZADO)
-    // ===============================================
+    // 2. MEJORAS ESPECIALES (Protocolo Omega Completo)
     const specials = [
-        // --- NUEVO: EL ACTIVADOR DE ANOMALÍAS ---
         { 
-            id: 'unlock-anomalies', 
-            name: 'Sensor de Anomalías', 
-            icon: '🧿', // Ojo místico / Sensor
-            cost: 10000000000, // 10 Billones (Coste Post-Omega)
-            desc: 'Permite detectar inestabilidades en la realidad.\nDesbloquea la aparición de Anomalías.', 
-            req: () => game.pearls.includes('red') // REQUISITO: Haber completado el Protocolo Omega (Perla Roja)
-        },
-
-        // --- UTILIDAD BÁSICA (Modificadas para requerir el Sensor) ---
-        { 
-            id: 'entropy-antenna', 
-            name: 'Antena de Entropía', 
-            icon: '📡', 
-            cost: 50000, 
-            desc: 'Anomalías aparecen un 20% más rápido.', 
-            // Ahora requiere tener el Sensor comprado:
-            req: () => game.upgrades.includes('unlock-anomalies') 
+            id: 'protocol-omega', 
+            name: 'Protocolo Omega', 
+            icon: '⚠️', 
+            cost: 5000000, 
+            desc: 'Inicia el experimento prohibido.\nProducción Global x1.2', 
+            req: () => game.totalCookiesEarned > 2000000 && !game.upgrades.includes('protocol-omega')
         },
         { 
-            id: 'quantum-lens', 
-            name: 'Lente Cuántica', 
-            icon: '🔍', 
-            cost: 150000, 
-            desc: 'Las anomalías duran +2s en pantalla.', 
-            req: () => game.upgrades.includes('unlock-anomalies')
+            id: 'omega-phase-2', 
+            name: 'Resonancia Oscura', 
+            icon: '🔉', 
+            cost: 25000000, 
+            desc: 'Se oyen susurros en los servidores.\nProducción Global x1.5', 
+            req: () => game.upgrades.includes('protocol-omega') && !game.upgrades.includes('omega-phase-2')
         },
-        
-        // ... (Tus otras mejoras de sinergia: Red Neuronal, etc. déjalas igual) ...
-        { id: 'grandma-mine-synergy', name: 'Red Neuronal', icon: '🧠', cost: 500000, desc: 'Servidores potencian Minas (+1%/cad uno).', req: () => game.buildings['grandma'] >= 50 && game.buildings['mine'] >= 10 },
-        { id: 'factory-click-synergy', name: 'Sobrecarga de Pulsos', icon: '🌀', cost: 1000000, desc: 'Cada Sincrotrón da +5 de poder de click base.', req: () => game.buildings['factory'] >= 15 },
-        { id: 'overcharge-plus', name: 'Batería de Helio', icon: '🔋', cost: 250000, desc: 'Sobrecarga dura 5 segundos más.', req: () => game.totalCookiesEarned > 750000 },
-
-        // ... (La Cadena Omega se queda igual) ...
-        { id: 'protocol-omega', name: 'Protocolo Omega', icon: '⚠️', cost: 5000000, desc: 'Inicia el experimento prohibido.\nProducción Global x1.2', req: () => game.totalCookiesEarned > 2000000 },
-        { id: 'omega-phase-2', name: 'Resonancia Oscura', icon: '🔉', cost: 25000000, desc: 'Se oyen susurros en los servidores.\nProducción Global x1.5', req: () => game.upgrades.includes('protocol-omega') },
-        { id: 'omega-phase-3', name: 'Fisura Dimensional', icon: '🌀', cost: 150000000, desc: 'La realidad comienza a agrietarse.\nProducción Global x2.0', req: () => game.upgrades.includes('omega-phase-2') },
-        { id: 'omega-phase-4', name: 'Fallo de Contención', icon: '🚨', cost: 1000000000, desc: '¡LOS NIVELES DE ENTROPÍA SON CRÍTICOS!\nProducción Global x3.0', req: () => game.upgrades.includes('omega-phase-3') },
-        
-        // EL FINAL (Si ya tienes la perla roja, esta mejora ya no necesita salir, o puedes dejarla como "comprada")
-        { id: 'omega-final', name: 'EL DESPERTAR', icon: '👁️', cost: 5000000000, desc: 'LIBERA AL VACÍO.\nProducción x5.0 + ???', req: () => game.upgrades.includes('omega-phase-4') && !isApocalypse }
+        { 
+            id: 'omega-phase-3', 
+            name: 'Fisura Dimensional', 
+            icon: '🌀', 
+            cost: 150000000, 
+            desc: 'La realidad comienza a agrietarse.\nProducción Global x2.0', 
+            req: () => game.upgrades.includes('omega-phase-2') && !game.upgrades.includes('omega-phase-3')
+        },
+        { 
+            id: 'omega-phase-4', 
+            name: 'Fallo de Contención', 
+            icon: '🚨', 
+            cost: 1000000000, 
+            desc: '¡ENTROPÍA CRÍTICA!\nProducción Global x3.0', 
+            req: () => game.upgrades.includes('omega-phase-3') && !game.upgrades.includes('omega-phase-4')
+        },
+        { 
+            id: 'omega-final', 
+            name: 'EL DESPERTAR', 
+            icon: '👁️', 
+            cost: 5000000000, 
+            desc: 'LIBERA AL VACÍO.\nProducción x5.0 + Perla Roja', 
+            req: () => game.upgrades.includes('omega-phase-4') && !game.upgrades.includes('omega-final')
+        }
     ];
 
-    // MENSAJE SI NO HAY MEJORAS DISPONIBLES
+    specials.forEach(s => {
+        if (s.req()) {
+            anyUp = true;
+            const btn = document.createElement('div');
+            btn.className = 'upgrade-crate special-upgrade'; 
+            btn.innerHTML = s.icon;
+            btn.dataset.cost = s.cost;
+            btn.setAttribute('data-tooltip', `${s.name}\n${s.desc}\nCoste: ${formatNumber(s.cost)}`);
+            
+            btn.onclick = () => window.buyUpgrade(s.id, s.cost);
+            upgradesEl.appendChild(btn);
+        }
+    });
+
     if(!anyUp) upgradesEl.innerHTML = '<div style="color:#444; font-size:0.8rem; width:100%; text-align:center;">Juega más para desbloquear tecnología...</div>';
 
-    // ===============================================
-    // 3. RENDERIZAR LISTA DE EDIFICIOS (CON REVELACIÓN PROGRESIVA)
-    // ===============================================
-    let lockedShown = 0; // Contador de edificios bloqueados visibles
-
+    // 3. RENDERIZAR EDIFICIOS
+    let lockedShown = 0; 
     for (let i = 0; i < buildingsConfig.length; i++) {
         const b = buildingsConfig[i];
         const count = game.buildings[b.id] || 0;
         const owned = count > 0;
 
-        // CRITERIO DE VISIBILIDAD:
-        // 1. Si ya tienes uno comprado -> SE VE.
-        // 2. Si es el primer edificio (Cursor) -> SE VE.
-        // 3. Si no lo tienes, pero es uno de los siguientes 2 -> SE VE.
-        
         if (owned || i === 0 || lockedShown < 2) {
-            
             const cost = getCost(b.id);
             const div = document.createElement('div');
             div.className = 'building-item';
             div.dataset.cost = cost; 
             
-            // Si no lo tienes, sumamos al contador de "bloqueados visibles"
             if (!owned) lockedShown++;
 
-            // Visual: Si está bloqueado y es el "segundo" bloqueado, lo mostramos con misterio
             const isMystery = !owned && lockedShown === 2;
-            
             const mult = b.currentPower / b.basePower;
             const multTxt = mult > 1 ? `<span style="color:var(--accent); font-size:0.8em">x${mult}</span>` : '';
 
@@ -1655,19 +1707,12 @@ function renderStore() {
             if (isMystery) {
                 div.style.opacity = "0.5";
                 div.style.filter = "blur(1px)";
-            }
-
-            // IMPORTANTE: Si es misterioso, el click no hace nada
-            if (!isMystery) {
-                div.onclick = () => window.buyBuilding(b.id);
-            } else {
                 div.style.cursor = "default";
+            } else {
+                div.onclick = () => window.buyBuilding(b.id);
             }
-
             buildingsEl.appendChild(div);
-
         } else {
-            // Si ya hemos mostrado 2 bloqueados, no dibujamos más y SALIMOS del bucle
             break; 
         }
     }
@@ -2588,7 +2633,7 @@ setTimeout(spawnAnomaly, 5000); // Primera anomalía a los 5 segundos
 const heavenlyConfig = [
     // --- NÚCLEO (INICIO) ---
     { 
-        id: 'genesis', name: 'Big Bang', icon: '💥', cost: 1, 
+        id: 'genesis', name: 'La semilla', icon: '💥', cost: 1, 
         x: 400, y: 300, 
         desc: 'El comienzo de todo. Empiezas con 100 Watts tras reiniciar.', 
         parents: [] 
