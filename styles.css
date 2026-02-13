@@ -1035,6 +1035,22 @@ button.sys-btn:hover { background: #333; color: white; border-color: #555; }
 .heaven-node.locked { opacity: 0.3; filter: grayscale(1); cursor: not-allowed; }
 
 @keyframes pulseNode { 0% { box-shadow: 0 0 5px #ffd700; } 50% { box-shadow: 0 0 20px #ffd700; } }
+@keyframes blue-glitch {
+    0% { filter: hue-rotate(0deg) blur(0px); }
+    20% { filter: hue-rotate(90deg) blur(2px); }
+    40% { filter: hue-rotate(180deg) blur(1px); }
+    60% { filter: hue-rotate(270deg) blur(3px); }
+    80% { filter: hue-rotate(360deg) blur(2px); }
+    100% { filter: hue-rotate(0deg) blur(0px); }
+}
+.blue-glitch {
+    animation: blue-glitch 0.15s infinite;
+    background: radial-gradient(circle at center, #00e5ff 0%, #000 100%) !important;
+}
+
+
+
+
 
 /* --- TOOLTIP FLOTANTE JS --- */
 .heaven-tooltip {

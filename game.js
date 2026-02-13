@@ -1475,19 +1475,80 @@ window.toggleHelper = function(helperId) {
 
 
 
+
+function epicBluePearlScene() {
+    console.log("Escena épica de la Perla Azul activada");
+    // Bloquea interacción (opcional: usa una variable global o un overlay)
+    document.body.classList.add('blue-glitch');
+    window.isSceneBlocked = true;
+
+    // Cambia colores en Three.js
+    if (mainObject && mainObject.material) {
+        mainObject.material.color.setHex(0x00e5ff);
+        mainObject.material.emissive.setHex(0x003366);
+    }
+    if (glowMesh && glowMesh.material) {
+        glowMesh.material.color.setHex(0x00e5ff);
+    }
+
+    // Genera partículas azules épicas
+    for(let i=0; i<200; i++) {
+        const mesh = new THREE.Mesh(
+            particleGeo,
+            new THREE.MeshBasicMaterial({ color: 0x00e5ff })
+        );
+        mesh.position.copy(mainObject.position);
+        mesh.userData.vel = new THREE.Vector3(
+            (Math.random()-0.5)*2,
+            (Math.random()-0.5)*2,
+            (Math.random()-0.5)*2
+        ).normalize().multiplyScalar(Math.random()*0.5+0.2);
+        scene.add(mesh);
+        particles.push(mesh);
+    }
+
+
+
+    // Sonido sci-fi
+    playTone(1200, 'sine', 0.5, 0.2);
+    setTimeout(() => playTone(1800, 'sine', 0.5, 0.2), 200);
+    setTimeout(() => playTone(800, 'triangle', 0.5, 0.2), 800);
+
+    // Desbloquea tras 5 segundos y restaura colores
+    setTimeout(() => {
+        document.getElementById('scene-blocker').style.display = 'none';
+        document.body.classList.remove('blue-glitch');
+        window.isSceneBlocked = false;
+        if (mainObject && mainObject.material) {
+            mainObject.material.color.setHex(0x00ff88);
+            mainObject.material.emissive.setHex(0x004422);
+        }
+        if (glowMesh && glowMesh.material) {
+            glowMesh.material.color.setHex(0x7c4dff);
+        }
+    }, 5000);
+}
+
+
+
+
+
+
+
 // Función que se ejecuta al hacer click en la esfera central
 function onObjectClick() {
     // --- 1. CONTAR EL CLICK ---
     game.totalClicks++;
-    if (game.totalClicks === 10000 && !game.pearls.includes('blue')) {
-        unlockPearl('blue');
-        showSystemModal("🔵 HITO ALCANZADO", "10,000 Clicks. La persistencia es la clave del tiempo.", false, null);
+    if (game.totalClicks >= 10000 && !game.pearls.includes('blue')) {
+    unlockPearl('blue');
+    showSystemModal(
+        "🔵 HITO ALCANZADO",
+        "10,000 Clicks. La persistencia ha fracturado el tiempo. ¡Has desbloqueado la Perla del Cronos (Clicks x50)!",
+        false,
+        null
+    );
+    epicBluePearlScene(); // <-- Llama aquí a la escena épica
     }
-
-    
-    const amount = getClickPower();
-    game.cookies += amount;
-    // ...
 }
 
 
@@ -2005,13 +2066,15 @@ function doClickLogic(cx, cy) {
     // 🔵 EL EVENTO DE LA PERLA AZUL (¡AQUÍ!)
     // ==========================================
     if (game.totalClicks >= 10000 && !game.pearls.includes('blue')) {
-        unlockPearl('blue');
-        showSystemModal(
-            "🔵 PERLA AZUL OBTENIDA",
-            "Tu persistencia ha fracturado el espacio-tiempo. Has condensado el esfuerzo de 10,000 pulsos en la Perla del Cronos (Clicks x50).",
-            false,
-            null
-        );
+    unlockPearl('blue');
+    showSystemModal(
+        "🔵 HITO ALCANZADO",
+        "10,000 Clicks. La persistencia ha fracturado el tiempo. ¡Has desbloqueado la Perla del Cronos (Clicks x50)!",
+        false,
+        null
+    );
+    console.log("Llamando a escena épica de la Perla Azul");
+    epicBluePearlScene();
     }
 
     // 4. TEXTO FLOTANTE
@@ -2721,6 +2784,9 @@ window.togglePearl = function(color) {
     updateUI(); // Para actualizar precios si es la verde
     recalculateStats(); // Para actualizar CPS si es la roja
 };
+
+
+
 
 
 
