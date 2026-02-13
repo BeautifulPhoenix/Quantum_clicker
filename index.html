@@ -70,6 +70,7 @@
 
         <div id="save-controls">
             <button class="sys-btn" onclick="toggleCollection()" title="Códice (Colección)" style="flex: 0.4; background: #3e2723; border-color: #5d4037; font-size: 1.2rem;">📖</button>
+            <button id="btn-stats" class="sys-btn" onclick="openStats()">📊 Stats</button>
             <button class="sys-btn" onclick="toggleAchievements()" title="Logros" style="flex: 0.4; background: #004d40; border-color: #00695c; font-size: 1.2rem;">🏆</button>
             <button class="sys-btn" onclick="exportSave()" title="Exportar Partida">📤</button>
             <button class="sys-btn" onclick="importSave()" title="Importar Partida">📥</button>
@@ -170,5 +171,13 @@
     <div id="global-tooltip" class="global-tooltip"></div>
 
     <script type="module" src="game.js"></script>
+    <div id="modal-stats" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+        <div class="close-btn" onclick="closeStats()">×</div>
+        <h3>📊 REPORTE DE RENDIMIENTO</h3>
+        <div id="stats-content">
+            </div>
+    </div>
+    </div>
 </body>
 </html>

@@ -981,19 +981,7 @@ function activateBuff(type, amount, seconds) {
 }
 
 
-function updateStats() {
-    const statsHTML = `
-        <h3>📊 ESTADÍSTICAS CORPORATIVAS</h3>
-        <p>Tiempo Jugado: ${formatTime(game.totalTimePlayed)}</p>
-        <p>Energía Total Generada: ${formatNumber(game.totalCookiesEarned)}</p>
-        
-        <p>Clicks Manuales Totales: <span style="color: #00e5ff">${game.totalClicks.toLocaleString()}</span> / 10,000</p>
-        
-        <p>Anomalías Capturadas: ${game.anomaliesClicked || 0}</p>
-        <p>Nivel de Prestigio Actual: ${formatNumber(game.prestigeLevel)}</p>
-    `;
-    document.getElementById('stats-content').innerHTML = statsHTML;
-}
+
 
 
 
@@ -1743,50 +1731,63 @@ function checkAvailability() {
 function doClickLogic(cx, cy) {
     sfxClick();
     
-    // 1. Aumentar Combo
+    // 1. AUMENTAR COMBO
     comboMultiplier += 0.05; 
     if(comboMultiplier > 5.0) comboMultiplier = 5.0; 
     comboTimer = 2.0; 
     
-    // Actualizar UI del combo
+    // Actualizar UI del combo (Visual)
     const comboEl = document.getElementById('combo-display');
-    comboEl.style.opacity = 1;
-    comboEl.innerText = `COMBO x${comboMultiplier.toFixed(2)}`;
+    if (comboEl) { // Protección por si no existe aún
+        comboEl.style.opacity = 1;
+        comboEl.style.transform = `scale(${1 + comboMultiplier/10})`; // Pequeño efecto de latido visual
+        comboEl.innerText = `COMBO x${comboMultiplier.toFixed(2)}`;
+    }
 
     // 2. CALCULAR DAÑO BASE
+    // Nota: getClickPower() ya incluye el multiplicador de combo actual
     let val = getClickPower();
     let isCrit = false;
 
     // --- CÁLCULO DE CRÍTICO ---
     let critChance = 0;
     
-    // Mejora Cosmos: Punto Débil (+5%)
+    // Mejora Cosmos: Punto Débil
     if (game.heavenlyUpgrades.includes('crit_master')) critChance += 0.05;
     
-    // Ayudante: Sargento Kael (+10%)
-    const critHelper = helpersConfig.find(h => h.id === 'h_crit'); // Asumiendo ID h_crit
-    if (critHelper && game.helpers.includes(critHelper.id)) critChance += 0.10;
+    // Ayudante: Sargento Kael (ID: h_crit)
+    // Comprobamos directamente si tenemos el ID en el array de helpers comprados
+    if (game.helpers.includes('h_crit')) critChance += 0.10;
 
     // Tirada de dados
     if (Math.random() < critChance) {
         isCrit = true;
-        val *= 10; // ¡Daño x10!
+        val *= 10; // ¡Daño masivo!
         
-        // Sonido especial de crítico (más agudo)
-        playTone(600, 'square', 0.1, 0.2);
+        // Sonido especial (Agudo y rápido)
+        playTone(600, 'square', 0.1, 0.2); 
+        
+        // Efecto visual extra: Shake de cámara manual
+        camera.position.x += (Math.random() - 0.5) * 0.5;
+        camera.position.y += (Math.random() - 0.5) * 0.5;
     }
 
     // 3. APLICAR RESULTADO
     game.cookies += val;
     game.totalCookiesEarned += val;
-    game.clickCount++;
+    
+    // --- AQUÍ ESTABA EL ERROR DE LAS ESTADÍSTICAS ---
+    if (!game.totalClicks) game.totalClicks = 0; // Protección inicial
+    game.totalClicks++; // Esto actualiza la estadística del menú
+    game.clickCount++;  // Esto mantiene la lógica interna de logros
+    // -----------------------------------------------
     
     // 4. TEXTO FLOTANTE
-    // Si es crítico, lo mostramos más grande y en otro color
+    // Pasamos el 4º argumento 'isCrit' a la función de texto
     if (isCrit) {
-        createFloatingText(cx, cy, `¡CRÍTICO! +${formatNumber(val)}`, true); // true para estilo crítico
+        createFloatingText(cx, cy, `¡CRÍTICO! +${formatNumber(val)}`, true); 
     } else {
-        createFloatingText(cx, cy, `+${formatNumber(val)}`);
+        createFloatingText(cx, cy, `+${formatNumber(val)}`, false);
     }
     
     updateUI();
@@ -2827,6 +2828,10 @@ window.finishAscension = function() {
 
 
 
+
+
+
+
 // ==========================================
 // SISTEMA DE IMPORTAR / EXPORTAR
 // ==========================================
@@ -2890,4 +2895,67 @@ window.importSave = function() {
 
 
 
+// ==========================================
+// 📊 SISTEMA DE ESTADÍSTICAS (DEFINITIVO)
+// ==========================================
+
+// 1. Contador de tiempo (Protegido contra duplicados)
+if (window.statsInterval) clearInterval(window.statsInterval);
+
+window.statsInterval = setInterval(() => {
+    if (typeof game !== 'undefined' && game) {
+        if (!game.totalTimePlayed) game.totalTimePlayed = 0;
+        game.totalTimePlayed++;
+    }
+}, 1000);
+
+// 2. Abrir ventana
+function openStats() {
+    updateStats();
+    const modal = document.getElementById('modal-stats');
+    if (modal) modal.style.display = 'flex';
+}
+
+// 3. Cerrar ventana
+function closeStats() {
+    const modal = document.getElementById('modal-stats');
+    if (modal) modal.style.display = 'none';
+}
+
+// 4. Renderizar datos
+function updateStats() {
+    if (typeof game === 'undefined' || !game) return;
+
+    const timePlayed = game.totalTimePlayed || 0;
+    const totalEnergy = game.totalCookiesEarned || 0;
+    const clicks = game.totalClicks || 0;
+    const anomalies = game.anomaliesClicked || 0;
+    const prestige = game.prestigeLevel || 0;
+
+    // Cálculo de tiempo
+    let h = Math.floor(timePlayed / 3600);
+    let m = Math.floor((timePlayed % 3600) / 60);
+    let s = Math.floor(timePlayed % 60);
+    const timeString = `${h}h ${m}m ${s}s`;
+
+    // Formateo de números (usa tu formatNumber si existe, o local)
+    const format = (typeof formatNumber === 'function') ? formatNumber : (n) => n.toLocaleString();
+    
+    const html = `
+        <p>Tiempo Jugado: <span style="color:#00e5ff">${timeString}</span></p>
+        <p>Energía Total: <span style="color:#ffd700">${format(totalEnergy)}</span></p>
+        <p>Clicks Totales: <span>${clicks.toLocaleString()}</span></p>
+        <p>Anomalías detectadas: <span style="color:#ff0055">${anomalies}</span></p>
+        
+    `;
+    
+    const content = document.getElementById('stats-content');
+    if (content) content.innerHTML = html;
+}
+
+// 5. EXPONER FUNCIONES AL HTML (¡ESTO ES LO QUE FALTABA!)
+window.openStats = openStats;
+window.closeStats = closeStats;
+
 window.game = game;
+

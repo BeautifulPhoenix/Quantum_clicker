@@ -1209,3 +1209,65 @@ body.intro-mode .floating-text {
     animation: bigBangFlash 3s forwards ease-out; /* dura 3 segundos */
 }
 
+/* --- ESTILOS DE LA VENTANA DE ESTADÍSTICAS --- */
+
+/* El fondo oscuro que tapa el juego */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.85); /* Oscuro y transparente */
+    backdrop-filter: blur(5px); /* Efecto borroso de fondo */
+    z-index: 5000; /* Por encima de todo */
+    display: none; /* Oculto por defecto */
+    justify-content: center;
+    align-items: center;
+}
+
+/* La caja de la ventana */
+.modal-box {
+    background: #141420;
+    border: 2px solid #00ff88; /* Borde verde neón */
+    padding: 30px;
+    border-radius: 10px;
+    width: 450px;
+    max-width: 90%;
+    color: #fff;
+    box-shadow: 0 0 50px rgba(0, 255, 136, 0.2);
+    text-align: center;
+    position: relative;
+    animation: popIn 0.3s ease-out;
+}
+
+/* Animación de entrada */
+@keyframes popIn {
+    0% { transform: scale(0.8); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* Botón de cerrar (X) */
+.close-btn {
+    position: absolute;
+    top: 10px; right: 15px;
+    font-size: 1.5rem;
+    color: #888;
+    cursor: pointer;
+}
+.close-btn:hover { color: #fff; }
+
+/* Texto de las estadísticas */
+#stats-content p {
+    border-bottom: 1px dotted #333;
+    padding-bottom: 8px;
+    margin: 12px 0;
+    text-align: left;
+    color: #ccc;
+    font-size: 1.1rem;
+    display: flex;
+    justify-content: space-between;
+}
+
+#stats-content span {
+    font-weight: bold;
+    color: #fff;
+}
