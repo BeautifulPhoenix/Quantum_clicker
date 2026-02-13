@@ -479,15 +479,20 @@ function dispose3D(object) {
 // ==========================================
 // ANOMALIAS RANDOM (FRENZY GOLDEN COOKIES)
 
+let isAnomalyLoopActive = false; // Variable de seguridad fuera de la función
+
 function spawnAnomaly() {
+    isAnomalyLoopActive = true;
+
     // 1. Probabilidad de Corrupción (Apocalipsis)
     const isCorrupt = isApocalypse && Math.random() < 0.3;
     
     // 2. Evento de Perla Azul (Solo si tienes +10k clicks y NO tienes la perla)
     const isTemporalEvent = !game.pearls.includes('blue') && (game.totalClicks >= 10000) && Math.random() < 0.3;
     
-    // 3. Elegir tipo de recompensa
-    const types = ['money', 'money', 'production', 'click']; 
+    // 3. Elegir tipo de recompensa (Lógica Ajustada)
+    // Antes: 50% dinero. Ahora: 40% dinero, 30% prod, 30% click (Más divertido)
+    const types = ['money', 'money', 'production', 'production', 'click', 'click']; 
     const type = types[Math.floor(Math.random() * types.length)];
     
     const orb = document.createElement('div');
@@ -495,8 +500,8 @@ function spawnAnomaly() {
     // Configuración visual por defecto
     let icon = '⚛️';
     let color = 'gold';
-    let size = '3.5rem'; // <--- ESTO FALTABA (Variable size definida)
-    
+    let size = '3.5rem';
+     
     // --- VISUALES SEGÚN TIPO ---
     if (isTemporalEvent) {
         icon = '⏳'; 
@@ -507,21 +512,21 @@ function spawnAnomaly() {
         color = '#ff0000'; // Rojo Sangre
         size = '4.5rem';
     } else if (type === 'production') {
-        icon = '⚡'; // Frenesí de Producción
+        icon = '⚡'; 
         color = '#ffaa00';
     } else if (type === 'click') {
-        icon = '🖱️'; // Frenesí de Clicks
+        icon = '🖱️'; 
         color = '#00ff88';
     }
 
     orb.innerHTML = icon;
     
-    // Posicionamiento aleatorio
+    // Posicionamiento
     orb.style.cssText = `
         position: absolute; 
         font-size: ${size}; 
         cursor: pointer; 
-        z-index: 999;
+        z-index: 2000; 
         filter: drop-shadow(0 0 15px ${color}); 
         left: ${Math.random() * 80 + 10}%; 
         top: ${Math.random() * 80 + 10}%;
@@ -529,78 +534,96 @@ function spawnAnomaly() {
         transition: transform 0.1s;
     `;
     
-    // Efecto al pasar el ratón
     orb.onmouseover = () => orb.style.transform = "scale(1.2)";
     orb.onmouseout = () => orb.style.transform = "scale(1.0)";
 
-    // --- LÓGICA DEL CLICK (ESTO FALTABA) ---
+    // --- LÓGICA DEL CLICK ---
     orb.onclick = function(e) {
+        e.stopPropagation(); 
         sfxAnomaly();
         game.anomaliesClicked++;
         
-        // Efecto visual de partículas o texto al clickar
         createFloatingText(e.clientX, e.clientY, "ANOMALÍA CAPTURADA");
 
+        // A. EVENTO ÚNICO (PERLA)
         if (isTemporalEvent) {
-            // -- EVENTO ÉPICO: PERLA AZUL --
             unlockPearl('blue');
         } 
+        // B. APOCALIPSIS (RIESGO)
         else if (isCorrupt) {
-            // -- APOCALIPSIS (Riesgo/Recompensa) --
-            if (Math.random() < 0.5) {
-                let loss = game.cookies * 0.05; // Pierdes 5%
+            // Lógica: Diplomacia del Vacío reduce riesgo 50% -> 25%
+            let riskThreshold = 0.5;
+            if (game.heavenlyUpgrades.includes('wrath_control')) riskThreshold = 0.25;
+
+            if (Math.random() < riskThreshold) {
+                // MALO (Resta 5% del banco)
+                let loss = game.cookies * 0.05; 
                 game.cookies -= loss;
                 showAnomalyPopup(`📉 ENTROPÍA: -${formatNumber(loss)} Watts`, 'bad');
             } else {
-                let gain = getCPS() * 666; // Ganas 666 segundos de producción
+                // BUENO (Gana 666s de producción)
+                let gain = getCPS() * 666; 
                 game.cookies += gain;
                 game.totalCookiesEarned += gain;
                 showAnomalyPopup(`😈 CAOS: +${formatNumber(gain)} Watts`, 'good');
             }
         } 
+        // C. DINERO DIRECTO (BALANCEADO)
         else if (type === 'money') {
-            // -- DINERO DE GOLPE --
-            // Ganas entre 10 minutos y 1 hora de producción de golpe
-            // Bonus por Perla Verde o Inversor Galáctico
             let bonusMult = 1;
-            if (game.helpers.includes('h_banker')) bonusMult = 1.5;
+            if (game.helpers.includes('h_banker')) bonusMult *= 1.5;
+            if (game.heavenlyUpgrades.includes('anomaly_nuke')) bonusMult *= 3.0;
 
-            let seconds = 600 + Math.random() * 3000;
+            // Base: Entre 5 y 30 minutos de producción (reducido un poco para no romper el juego)
+            let seconds = 300 + Math.random() * 1500; 
             let gain = (getCPS() * seconds) * bonusMult;
             
-            // Mínimo garantizado para que no de 0 al principio
-            if (gain < game.cookies * 0.1) gain = game.cookies * 0.15; 
-            if (gain === 0) gain = 15;
+            // LÓGICA DE BALANCEO (Soft-Cap):
+            // La ganancia no puede superar el 25% de lo que tienes ahorrado actualmente.
+            // Esto obliga al jugador a ahorrar para ganar premios más grandes (Estrategia "Bank").
+            let bankCap = game.cookies * 0.25; 
+            if (gain > bankCap && bankCap > 0) {
+                gain = bankCap; 
+            }
+            
+            // Suelo mínimo garantizado (para cuando empiezas y tienes 0)
+            if (gain < 15) gain = 15;
 
             game.cookies += gain;
             game.totalCookiesEarned += gain;
             showAnomalyPopup(`💰 SURGE: +${formatNumber(gain)} Watts`);
         } 
+        // D. BUFF PRODUCCIÓN
         else if (type === 'production') {
-            // -- FRENESÍ DE PRODUCCIÓN --
-            activateBuff('production', 7, 77); // x7 durante 77 segundos
-            showAnomalyPopup(`⚡ SOBRECARGA: x7 Prod (77s)`);
+            let duration = 77;
+            if (game.heavenlyUpgrades.includes('golden_duration')) duration += 10;
+            
+            activateBuff('production', 7, duration);
+            showAnomalyPopup(`⚡ SOBRECARGA: x7 Prod (${duration}s)`);
         } 
+        // E. BUFF CLICK
         else if (type === 'click') {
-            // -- FRENESÍ DE CLICKS --
-            activateBuff('click', 777, 13); // x777 durante 13 segundos
-            showAnomalyPopup(`🖱️ CLICKSTORM: x777 Power (13s)`);
+            let duration = 13;
+            if (game.heavenlyUpgrades.includes('click_frenzy_boost')) duration *= 2;
+            if (game.heavenlyUpgrades.includes('golden_duration')) duration += 10;
+
+            activateBuff('click', 777, duration);
+            showAnomalyPopup(`🖱️ CLICKSTORM: x777 Power (${duration}s)`);
         }
 
-        // Eliminar bola y actualizar UI
         this.remove();
         updateUI();
     };
 
+
+
     document.getElementById('game-area').appendChild(orb);
     
-    // --- GESTIÓN DE TIEMPO DE VIDA ---
-    let lifeTime = isCorrupt ? 5000 : 12000; // Corruptas duran menos (5s)
-    
-    // Mejoras que aumentan duración
+    // --- LÓGICA DE DESAPARICIÓN ---
+    let lifeTime = isCorrupt ? 5000 : 12000; 
     if (game.upgrades.includes('quantum-lens')) lifeTime += 4000;
+    if (game.heavenlyUpgrades.includes('golden_duration')) lifeTime += 3000;
 
-    // Animación de desaparición
     setTimeout(() => { 
         if(orb.parentNode) {
             orb.style.opacity = 0;
@@ -609,15 +632,18 @@ function spawnAnomaly() {
         } 
     }, lifeTime); 
 
-    // --- RECURSIVIDAD (PROGRAMAR LA SIGUIENTE) ---
+    // --- RECURSIVIDAD (SIGUIENTE SPAWN) ---
     const anomalyHelper = helpersConfig.find(h => h.effect === 'anomalyRate');
-    let baseTime = 30000 + Math.random() * 60000; // Entre 30 y 90 segundos
     
-    // Reducir tiempo si tienes mejoras
+    // Tiempo base: entre 30s y 90s
+    let baseTime = 30000 + Math.random() * 60000; 
+    
+    // Aplicar reducciones de tiempo
     if (anomalyHelper && game.helpers.includes(anomalyHelper.id)) baseTime /= anomalyHelper.value;
     if (game.upgrades.includes('entropy-antenna')) baseTime *= 0.8; 
+    if (game.heavenlyUpgrades.includes('lucky_star')) baseTime *= 0.85; // 15% más rápido
     
-    // Si el combo es alto, aparecen más rápido
+    // Si el jugador está activo (combo alto), premiamos con más frecuencia
     if (comboMultiplier > 3.0) baseTime *= 0.7;
 
     setTimeout(spawnAnomaly, baseTime);
@@ -721,29 +747,45 @@ function getClickPower() {
     const cursorData = buildingsConfig.find(u => u.id === 'cursor');
     const count = game.buildings[cursorData.id] || 0;
 
-    // 1. PRIMERO DEFINIMOS EL PODER BASE
-    let power = (1 + (count * cursorData.currentPower)) * game.prestigeMult;
+    // 1. CÁLCULO DEL PODER BASE (Cursor + Mejoras Planas)
+    let baseFlatPower = 1 + (count * cursorData.currentPower);
 
-    // 2. AHORA APLICAMOS LA PERLA AZUL (Si la tienes activa)
-    if (game.activePearl === 'blue') power *= 50; 
-    
-    // MEJORA ESPECIAL: Sinergia Sincrotrón
+    // --- MEJORA: Sinergia Sincrotrón (Ahora se suma a la base) ---
     if (game.upgrades.includes('factory-click-synergy')) {
         const factoryCount = game.buildings['factory'] || 0;
-        power += (factoryCount * 5);
+        baseFlatPower += (factoryCount * 5); 
+        // Al sumarlo aquí, luego se multiplicará por el Prestigio y los Ayudantes.
+        // ¡Mucho más potente!
     }
 
-    // Efecto de ayudante de clicks
+    // 2. APLICAR MULTIPLICADORES GLOBALES A LA BASE
+    let power = baseFlatPower * game.prestigeMult;
+
+    // 3. ARTEFACTO: PERLA AZUL (x50)
+    if (game.activePearl === 'blue') power *= 50; 
+
+    // 4. AYUDANTE: Dra. Aris Thorne (Multiplicador de Click)
     const clickHelper = helpersConfig.find(h => h.effect === 'clickPower');
     if (clickHelper && game.helpers.includes(clickHelper.id)) {
         power *= clickHelper.value;
     }
     
-    // Lógica de "Dedo Divino"
+    // 5. ÁRBOL COSMOS (ASCENSIÓN) - Porcentaje de WPS al Click
+    // (Esto está perfecto donde está, sumándose al final)
+    let wpsToClick = 0;
+
     if (game.heavenlyUpgrades.includes('click_god')) {
-        power += (getCPS() * 0.01);
+        wpsToClick = 0.05; 
+    }
+    else if (game.heavenlyUpgrades.includes('click_transistor')) {
+        wpsToClick = 0.01; 
+    }
+    
+    if (wpsToClick > 0) {
+        power += (getCPS() * wpsToClick);
     }
 
+    // 6. MULTIPLICADORES FINALES
     return Math.floor(power * comboMultiplier * clickBuffMultiplier);
 }
 
@@ -751,47 +793,78 @@ function getClickPower() {
 function getCPS() {
     let cps = 0;
 
-    
+    // 1. CÁLCULO BASE DE EDIFICIOS
     buildingsConfig.forEach(u => {
         if (u.type === 'auto') {
-            // CAMBIO AQUÍ: Añadido "|| 0"
             let count = game.buildings[u.id] || 0; 
             let bPower = count * u.currentPower;
             
-            // Sinergia: Red Neuronal
-            if (u.id === 'mine' && game.upgrades?.includes('grandma-mine-synergy')) { // Añadido ?.
-                const grandmaCount = game.buildings['grandma'] || 0; // Añadido || 0
+            // Sinergia: Red Neuronal (Mina potencia por cada Abuela)
+            if (u.id === 'mine' && game.upgrades?.includes('grandma-mine-synergy')) { 
+                const grandmaCount = game.buildings['grandma'] || 0; 
                 bPower *= (1 + (grandmaCount * 0.01));
             }
             cps += bPower;
         }
     });
 
+    // 2. MULTIPLICADORES GLOBALES (PRESTIGIO)
     let total = cps * game.prestigeMult;
     
-    // Ayudante de producción
+    // 3. AYUDANTES (STAFF)
+    // Ing. Marcus Voltz (Multiplicador simple)
     const prodHelper = helpersConfig.find(h => h.effect === 'cpsMultiplier');
     if (prodHelper && game.helpers.includes(prodHelper.id)) {
         total *= prodHelper.value;
     }
 
-    // --- CADENA OMEGA (MULTIPLICADORES DE LORE) ---
-    // Fase 1: Protocolo Omega (x1.2)
+    // IA "Mente Enlazada" (Sinergia por número de edificios)
+    const synergyHelper = helpersConfig.find(h => h.effect === 'buildingSynergy');
+    if (synergyHelper && game.helpers.includes(synergyHelper.id)) {
+        const totalBuildings = Object.values(game.buildings).reduce((a, b) => a + b, 0);
+        // Ejemplo: 100 edificios * 0.01 = +100% (x2.0)
+        total *= (1 + (totalBuildings * synergyHelper.value));
+    }
+
+    // 4. CADENA OMEGA (LORE)
     if (game.upgrades.includes('protocol-omega')) total *= 1.2;
-    // Fase 2: Resonancia (x1.5)
     if (game.upgrades.includes('omega-phase-2')) total *= 1.5;
-    // Fase 3: Fisura (x2.0)
     if (game.upgrades.includes('omega-phase-3')) total *= 2.0;
-    // Fase 4: Contención Fallida (x3.0)
     if (game.upgrades.includes('omega-phase-4')) total *= 3.0;
-    // Fase 5: EL DESPERTAR (x5.0 + Apocalipsis visual)
     if (game.upgrades.includes('omega-final')) total *= 5.0;
 
-    // Sobrecarga y Frenesí
-    if (isOvercharged) total *= 5;
-    if (game.heavenlyUpgrades.includes('perm_prod')) total *= 1.10; // +10% permanente
-    if (game.activePearl === 'red') total *= 10; // Bonus masivo
-    return total * buffMultiplier;
+    // 5. ÁRBOL DE ASCENSIÓN (COSMOS - NUEVO)
+    
+    // Eficiencia Industrial I (+15%)
+    if (game.heavenlyUpgrades.includes('perm_prod_1')) total *= 1.15;
+    
+    // (Compatibilidad con save antiguo 'perm_prod')
+    if (game.heavenlyUpgrades.includes('perm_prod')) total *= 1.10; 
+
+    // Cerebro Galáctico (+2% por cada logro desbloqueado)
+    if (game.heavenlyUpgrades.includes('galaxy_brain')) {
+        const achievementBonus = 1 + (game.achievements.length * 0.02);
+        total *= achievementBonus;
+    }
+    
+    // Sinergia Estructural (+10% por cada 50 edificios totales)
+    if (game.heavenlyUpgrades.includes('synergy_passive')) {
+        const totalBuildings = Object.values(game.buildings).reduce((a, b) => a + b, 0);
+        const stacks = Math.floor(totalBuildings / 50);
+        if (stacks > 0) total *= (1 + (stacks * 0.10));
+    }
+
+    // Motor de Materia Oscura (Multiplicador puro x2)
+    if (game.heavenlyUpgrades.includes('dark_matter_engine')) total *= 2.0;
+    
+    // Multiverso (Dobla la eficiencia del prestigio)
+    if (game.heavenlyUpgrades.includes('multiverse')) total *= 2.0;
+
+    // 6. MULTIPLICADORES TEMPORALES Y ESPECIALES
+    if (isOvercharged) total *= 5; // Sobrecarga manual
+    if (game.activePearl === 'red') total *= 10; // Perla Roja (Apocalipsis)
+    
+    return total * buffMultiplier; // Buffs de Anomalías
 }
 
 
@@ -829,6 +902,10 @@ function getCost(id) {
     // Aplicar descuento de perla verde
     if (game.activePearl === 'green') cost *= 0.5;
 
+    // MEJORA: Arquitectura Cuántica (-5% coste)
+    if (game.heavenlyUpgrades.includes('cheaper_builds')) cost *= 0.95;
+    
+    if (game.activePearl === 'green') cost *= 0.5;
     return cost;
 }
 
@@ -1355,18 +1432,53 @@ function checkAvailability() {
 
 function doClickLogic(cx, cy) {
     sfxClick();
+    
+    // 1. Aumentar Combo
     comboMultiplier += 0.05; 
     if(comboMultiplier > 5.0) comboMultiplier = 5.0; 
     comboTimer = 2.0; 
+    
+    // Actualizar UI del combo
     const comboEl = document.getElementById('combo-display');
     comboEl.style.opacity = 1;
     comboEl.innerText = `COMBO x${comboMultiplier.toFixed(2)}`;
 
-    const val = getClickPower();
+    // 2. CALCULAR DAÑO BASE
+    let val = getClickPower();
+    let isCrit = false;
+
+    // --- CÁLCULO DE CRÍTICO ---
+    let critChance = 0;
+    
+    // Mejora Cosmos: Punto Débil (+5%)
+    if (game.heavenlyUpgrades.includes('crit_master')) critChance += 0.05;
+    
+    // Ayudante: Sargento Kael (+10%)
+    const critHelper = helpersConfig.find(h => h.id === 'h_crit'); // Asumiendo ID h_crit
+    if (critHelper && game.helpers.includes(critHelper.id)) critChance += 0.10;
+
+    // Tirada de dados
+    if (Math.random() < critChance) {
+        isCrit = true;
+        val *= 10; // ¡Daño x10!
+        
+        // Sonido especial de crítico (más agudo)
+        playTone(600, 'square', 0.1, 0.2);
+    }
+
+    // 3. APLICAR RESULTADO
     game.cookies += val;
     game.totalCookiesEarned += val;
     game.clickCount++;
-    createFloatingText(cx, cy, `+${formatNumber(val)}`);
+    
+    // 4. TEXTO FLOTANTE
+    // Si es crítico, lo mostramos más grande y en otro color
+    if (isCrit) {
+        createFloatingText(cx, cy, `¡CRÍTICO! +${formatNumber(val)}`, true); // true para estilo crítico
+    } else {
+        createFloatingText(cx, cy, `+${formatNumber(val)}`);
+    }
+    
     updateUI();
 }
 
@@ -2124,22 +2236,129 @@ setTimeout(spawnAnomaly, 5000); // Primera anomalía a los 5 segundos
 
 // Configuración de Nodos (ID, Nombre, Icono, Coste, Posición X/Y, Requisito)
 // COORDENADAS COMPACTAS: Centro X = 350
+// ==========================================
+// CONFIGURACIÓN DEL ÁRBOL DE ASCENSIÓN (COSMOS)
+// ==========================================
+// Coordenadas: Centro del Canvas aprox (400, 300)
+
 const heavenlyConfig = [
-    // RAÍZ (Arriba centro)
-    { id: 'genesis', name: 'Génesis', icon: '👶', cost: 1, x: 350, y: 30, desc: 'Comienza con 100 Watts ', parents: [] },
-    
-    // RAMA IZQUIERDA (Producción Pasiva)
-    { id: 'starter_kit', name: 'Kit Inicial', icon: '📦', cost: 2, x: 200, y: 120, desc: 'Empiezas con 10 Nanobots gratis.', parents: ['genesis'] },
-    { id: 'perm_prod', name: 'Aura Eterna', icon: '⏳', cost: 10, x: 120, y: 220, desc: '+10% Producción Pasiva PERMANENTE.', parents: ['starter_kit'] },
-    { id: 'offline_god', name: 'Cronos', icon: '💤', cost: 50, x: 200, y: 320, desc: 'Gana el 100% de producción offline (antes 50%).', parents: ['perm_prod'] },
+    // --- NÚCLEO (INICIO) ---
+    { 
+        id: 'genesis', name: 'Big Bang', icon: '💥', cost: 1, 
+        x: 400, y: 300, 
+        desc: 'El comienzo de todo. Empiezas con 100 Watts tras reiniciar.', 
+        parents: [] 
+    },
 
-    // RAMA DERECHA (Activa / Clicks)
-    { id: 'lucky_strike', name: 'Suerte Cósmica', icon: '🍀', cost: 3, x: 500, y: 120, desc: 'Las anomalías aparecen un 10% más.', parents: ['genesis'] },
-    { id: 'click_god', name: 'Dedo Divino', icon: '👆', cost: 15, x: 580, y: 220, desc: '+1% de tu WPS se añade a tu click base.', parents: ['lucky_strike'] },
-    { id: 'wrath_control', name: 'Diplomacia', icon: '🤝', cost: 100, x: 500, y: 320, desc: 'Las anomalías rojas tienen 50% menos chance de efecto negativo.', parents: ['click_god'] },
+    // --- RAMA IZQUIERDA: INDUSTRIAL (PRODUCCIÓN PASIVA) ---
+    { 
+        id: 'starter_kit', name: 'Kit de Supervivencia', icon: '📦', cost: 5, 
+        x: 300, y: 300, 
+        desc: 'Inicias con 10 Generadores Manuales y 5 Hámsters gratis.', 
+        parents: ['genesis'] 
+    },
+    { 
+        id: 'perm_prod_1', name: 'Eficiencia Industrial I', icon: '🏭', cost: 25, 
+        x: 220, y: 250, 
+        desc: 'Toda la producción de edificios +15% PERMANENTE.', 
+        parents: ['starter_kit'] 
+    },
+    { 
+        id: 'cheaper_builds', name: 'Arquitectura Cuántica', icon: '📉', cost: 100, 
+        x: 150, y: 300, 
+        desc: 'Todos los edificios cuestan un 5% menos (acumulable con otros descuentos).', 
+        parents: ['starter_kit'] 
+    },
+    { 
+        id: 'offline_god', name: 'Cronos', icon: '💤', cost: 250, 
+        x: 80, y: 250, 
+        desc: 'Gana el 100% de producción offline (antes 50%) durante 24h.', 
+        parents: ['perm_prod_1'] 
+    },
+    { 
+        id: 'synergy_passive', name: 'Sinergia Estructural', icon: '🏗️', cost: 1000, 
+        x: 80, y: 350, 
+        desc: 'Por cada 50 edificios que tengas en total, ganas +10% de Producción Global.', 
+        parents: ['cheaper_builds'] 
+    },
 
-    // RAMA CENTRAL (Poder Puro - Abajo del todo)
-    { id: 'synergy_master', name: 'Maestro de Sinergia', icon: '🔗', cost: 500, x: 350, y: 450, desc: 'Todas las mejoras de sinergia son un 50% más efectivas.', parents: ['offline_god', 'wrath_control'] }
+    // --- RAMA DERECHA: CINÉTICA (CLICKS Y CRÍTICOS) ---
+    { 
+        id: 'click_transistor', name: 'Transistor de Dedo', icon: '👆', cost: 10, 
+        x: 500, y: 300, 
+        desc: 'Tus clicks ahora generan el 1% de tu Producción por Segundo (WPS).', 
+        parents: ['genesis'] 
+    },
+    { 
+        id: 'crit_master', name: 'Punto Débil', icon: '🎯', cost: 50, 
+        x: 580, y: 250, 
+        desc: 'Probabilidad base de crítico manual +5%.', 
+        parents: ['click_transistor'] 
+    },
+    { 
+        id: 'click_god', name: 'Mano de Dios', icon: '⚡', cost: 300, 
+        x: 650, y: 300, 
+        desc: 'El 1% de WPS pasa a ser el 5% de WPS por click.', 
+        parents: ['click_transistor'] 
+    },
+    { 
+        id: 'click_frenzy_boost', name: 'Condensador de Flujo', icon: '🖱️', cost: 1500, 
+        x: 720, y: 250, 
+        desc: 'Los buffs de "Clickstorm" (x777) duran el doble de tiempo.', 
+        parents: ['crit_master', 'click_god'] 
+    },
+
+    // --- RAMA INFERIOR: CAOS (ANOMALÍAS Y SUERTE) ---
+    { 
+        id: 'lucky_star', name: 'Suerte Cósmica', icon: '🍀', cost: 50, 
+        x: 400, y: 400, 
+        desc: 'Las anomalías aparecen un 15% más frecuentemente.', 
+        parents: ['genesis'] 
+    },
+    { 
+        id: 'wrath_control', name: 'Diplomacia del Vacío', icon: '🤝', cost: 200, 
+        x: 350, y: 480, 
+        desc: 'Las anomalías rojas (malas) tienen un 50% menos de probabilidad de efecto negativo.', 
+        parents: ['lucky_star'] 
+    },
+    { 
+        id: 'golden_duration', name: 'Estabilidad Temporal', icon: '⏳', cost: 500, 
+        x: 450, y: 480, 
+        desc: 'Los efectos de las anomalías (x7, x777) duran +10 segundos.', 
+        parents: ['lucky_star'] 
+    },
+    { 
+        id: 'anomaly_nuke', name: 'Colapso de Probabilidad', icon: '🎲', cost: 5000, 
+        x: 400, y: 550, 
+        desc: 'Las anomalías de "Dinero Instantáneo" dan el triple de recompensa.', 
+        parents: ['wrath_control', 'golden_duration'] 
+    },
+
+    // --- RAMA SUPERIOR: DIVINA (ENDGAME / MULTIPLICADORES PUROS) ---
+    { 
+        id: 'galaxy_brain', name: 'Cerebro Galáctico', icon: '🧠', cost: 1000, 
+        x: 400, y: 200, 
+        desc: 'Por cada Logro desbloqueado, ganas +2% de Producción Global.', 
+        parents: ['genesis'] 
+    },
+    { 
+        id: 'dark_matter_engine', name: 'Motor de Materia Oscura', icon: '🌌', cost: 10000, 
+        x: 320, y: 120, 
+        desc: 'Aumenta la producción base de TODO un x2.0 (Se multiplica con todo).', 
+        parents: ['galaxy_brain'] 
+    },
+    { 
+        id: 'singularity', name: 'LA SINGULARIDAD', icon: '👁️', cost: 100000, 
+        x: 480, y: 120, 
+        desc: 'Rompe el juego. Comienzas con todas las mejoras tecnológicas de Tier 1 y 2 desbloqueadas.', 
+        parents: ['galaxy_brain'] 
+    },
+    { 
+        id: 'multiverse', name: 'Multiverso', icon: '🪐', cost: 1000000, // 1 Millón
+        x: 400, y: 50, 
+        desc: 'Prestigio Infinito: Tu multiplicador de Ascensión es el doble de efectivo.', 
+        parents: ['dark_matter_engine', 'singularity'] 
+    }
 ];
 
 // Variable para guardar las mejoras celestiales compradas
@@ -2161,6 +2380,7 @@ function renderHeavenTree() {
     const canvas = document.getElementById('heaven-canvas');
     const tooltip = document.getElementById('heaven-tooltip');
     const ctx = canvas.getContext('2d');
+    
     
     // Configuración compacta
     const treeW = 800; const treeH = 600;
@@ -2224,6 +2444,9 @@ function renderHeavenTree() {
         container.appendChild(div);
     });
 }
+
+
+
 
 function buyHeavenlyUpgrade(node) {
     if (game.heavenlyUpgrades.includes(node.id)) return; // Ya comprado
