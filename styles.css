@@ -1102,7 +1102,49 @@ button.sys-btn:hover { background: #333; color: white; border-color: #555; }
 }
 
 
+#buff-container {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 300px;
+    height: 10px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--accent);
+    z-index: 3000;
+    overflow: hidden;
+}
 
+#buff-bar {
+    width: 100%;
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.1s linear;
+}
+
+#buff-text {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    font-size: 10px;
+    color: white;
+    top: -15px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+#btn-prestige.available {
+    background: linear-gradient(45deg, #651fff, #b388ff);
+    box-shadow: 0 0 20px rgba(101, 31, 255, 0.6);
+    animation: pulse-ascend 2s infinite;
+    cursor: pointer;
+}
+
+@keyframes pulse-ascend {
+    0% { transform: scale(1); filter: brightness(1); }
+    50% { transform: scale(1.05); filter: brightness(1.3); }
+    100% { transform: scale(1); filter: brightness(1); }
+}
 
 
 /* --- TOOLTIP FLOTANTE JS --- */
