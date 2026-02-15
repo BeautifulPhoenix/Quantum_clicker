@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Quantum Clicker: Ultimate Edition</title>
     <link rel="stylesheet" href="styles.css">
@@ -14,6 +15,33 @@
     </script>
 </head>
 <body>
+    <!-- AVISO DE FOTOSENSIBILIDAD / EPILEPSIA -->
+    <div id="modal-epilepsy" class="modal-overlay" style="display:none; z-index: 99999; background: rgba(0,0,0,0.95);">
+        <div class="modal-box" style="border-color: #ffd700; max-width: 520px; text-align: center;">
+            <div style="font-size: 3rem; margin-bottom: 10px;">⚠️</div>
+            <h2 style="color: #ffd700; border: none; margin-bottom: 5px; font-size: 1.4rem;">AVISO DE FOTOSENSIBILIDAD</h2>
+            <p style="color: #ccc; font-size: 0.95rem; line-height: 1.6; margin: 15px 0;">
+                Este juego contiene <strong style="color:#ff5252;">efectos visuales intensos</strong>: 
+                destellos luminosos, parpadeos rápidos, cambios bruscos de color, 
+                vibraciones de pantalla y efectos de bloom.
+            </p>
+            <p style="color: #00e5ff; font-size: 1.1rem; margin: 20px 0; font-weight: bold; text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);">
+                ⚠️ PARA INICIAR: Haz click 100 veces en el núcleo para estabilizarlo.
+            </p>
+            <p style="color: #ff9100; font-size: 0.85rem; margin-bottom: 20px;">
+                Si padeces <strong>epilepsia fotosensible</strong> u otra condición sensible a estímulos visuales, 
+                te recomendamos activar el <strong>Modo Seguro</strong>.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button onclick="acceptSafeMode()" style="padding: 14px; background: #1b5e20; border: 2px solid #4caf50; color: #fff; font-weight: bold; font-size: 1rem; cursor: pointer; border-radius: 8px;">🛡️ ACTIVAR MODO SEGURO (efectos reducidos)</button>
+                <button onclick="acceptNormalMode()" style="padding: 12px; background: transparent; border: 1px solid #555; color: #aaa; font-size: 0.9rem; cursor: pointer; border-radius: 8px;">Continuar con efectos completos</button>
+            </div>
+            <p style="color: #666; font-size: 0.7rem; margin-top: 15px;">
+                Puedes cambiar esta opción en cualquier momento desde el botón 🛡️ en la barra inferior.
+            </p>
+        </div>
+    </div>
+
     <div id="intro-layer">
     <div id="intro-text"></div>
     </div>
@@ -76,19 +104,42 @@
             <button class="sys-btn" onclick="toggleCollection()" title="Códice (Colección)" style="flex: 0.4; background: #3e2723; border-color: #5d4037; font-size: 1.2rem;">📖</button>
             <button id="btn-stats" class="sys-btn" onclick="openStats()">📊 Stats</button>
             <button class="sys-btn" onclick="toggleAchievements()" title="Logros" style="flex: 0.4; background: #004d40; border-color: #00695c; font-size: 1.2rem;">🏆</button>
+            <button class="sys-btn" onclick="openSettings()" title="Ajustes" style="flex: 0.4; font-size: 1.2rem;">⚙️</button>
             <button class="sys-btn" onclick="exportSave()" title="Exportar Partida">📤</button>
             <button class="sys-btn" onclick="importSave()" title="Importar Partida">📥</button>
             <button class="sys-btn" id="btn-prestige" onclick="doPrestige()">Ascender</button>
             <button class="sys-btn" onclick="saveGame()">Guardar</button>
             <button class="sys-btn" onclick="resetGame()" style="color: var(--danger);">Reset</button>
         </div>
+
+        <!-- RADIO MINI-PLAYER (siempre visible) -->
+        <div id="radio-mini" class="radio-mini" onclick="openSettings()">
+            <span id="radio-mini-icon">🔇</span>
+            <span id="radio-mini-text" class="radio-mini-marquee">Radio apagada</span>
+        </div>
     </div>
 
     <div id="modal-achievements" class="modal-overlay">
         <div class="modal-box">
             <div class="close-btn" onclick="toggleAchievements()">×</div>
-            <h2 style="border:none; margin-bottom:0;">🏆 Galería de Trofeos</h2>
-            <div id="achievements-grid"></div>
+            <div class="modal-header">
+                <h2>🏆 Galería de Trofeos</h2>
+                <div class="achievement-stats">
+                    <span id="ach-count">0 / 0</span>
+                    <span id="ach-bonus" style="color:var(--neon-green)">Bonus: 0%</span>
+                </div>
+            </div>
+            
+            <div class="ach-tabs">
+                <button class="ach-tab active" onclick="filterAchievements('all')">Todos</button>
+                <button class="ach-tab" onclick="filterAchievements('building')">Edificios</button>
+                <button class="ach-tab" onclick="filterAchievements('energy')">Economía</button>
+                <button class="ach-tab" onclick="filterAchievements('special')">Especiales</button>
+            </div>
+
+            <div id="achievements-grid" class="achievements-grid">
+                <!-- Se rellena con JS -->
+            </div>
         </div>
     </div>
 
@@ -173,6 +224,104 @@
 
     
     <div id="global-tooltip" class="global-tooltip"></div>
+
+    <!-- MODAL DE AJUSTES -->
+    <div id="modal-settings" class="modal-overlay" style="display:none;">
+        <div class="modal-box" style="max-width: 480px; text-align: left;">
+            <div class="close-btn" onclick="closeSettings()">×</div>
+            <h2 style="color: #00e5ff; border: none; text-align: center; font-size: 1.1rem; margin-bottom: 15px;">⚙️ AJUSTES</h2>
+
+            <!-- SECCIÓN: RADIO -->
+            <div class="settings-section">
+                <h3 class="settings-title">📻 RADIO</h3>
+                
+                <div class="radio-player">
+                    <div class="radio-now-playing">
+                        <span id="radio-status-icon">⏸️</span>
+                        <span id="radio-station-name">Sin emisora</span>
+                    </div>
+
+                    <div class="radio-controls">
+                        <button id="btn-radio-toggle" class="radio-btn" onclick="toggleRadio()" title="Play/Pause">▶️</button>
+                        <input id="radio-volume" type="range" min="0" max="100" value="30" class="radio-slider" oninput="setRadioVolume(this.value)">
+                        <span id="radio-volume-label" style="color:#888; font-size:0.75rem; min-width:30px;">30%</span>
+                    </div>
+                </div>
+
+                <div class="radio-stations">
+                    <label class="settings-label">Emisora:</label>
+                    <select id="radio-station-select" class="settings-select" onchange="changeStation(this.value)">
+                        <option value="">— Seleccionar —</option>
+                        <option value="nightride">🌃 Nightride FM (Synthwave)</option>
+                        <option value="chillsynth">🌌 Nightride Chillsynth</option>
+                        <option value="ebsm">⚡ Nightride EBSM (Dark Synth)</option>
+                        <option value="spacestation">🛸 SomaFM Space Station</option>
+                        <option value="defcon">💀 SomaFM DEF CON Radio</option>
+                        <option value="vaporwaves">🌊 SomaFM Vaporwaves</option>
+                        <option value="custom">🔗 URL Personalizada...</option>
+                    </select>
+                </div>
+
+                <div id="custom-url-section" style="display:none; margin-top: 8px;">
+                    <label class="settings-label">URL del stream:</label>
+                    <div style="display:flex; gap:6px;">
+                        <input id="radio-custom-url" type="url" class="settings-input" placeholder="https://stream.example.com/radio.mp3">
+                        <button class="radio-btn" onclick="applyCustomUrl()" style="padding: 0 12px;">OK</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECCIÓN: ACCESIBILIDAD -->
+            <div class="settings-section">
+                <h3 class="settings-title">🛡️ ACCESIBILIDAD</h3>
+                
+                <!-- Master toggle -->
+                <div class="settings-row" style="margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 10px;">
+                    <div>
+                        <span style="color:#ffd700; font-size:0.9rem; font-weight:bold;">Modo Seguro (TODO)</span>
+                        <p style="color:#888; font-size:0.7rem; margin: 2px 0 0 0;">Activa o desactiva todos los efectos a la vez.</p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-safe-mode" onchange="toggleSafeMode()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <!-- Controles individuales -->
+                <div class="safe-settings-grid">
+                    <label class="safe-setting-item">
+                        <input type="checkbox" id="safe-noBloom" onchange="toggleSafeSetting('noBloom')">
+                        <span>💡 Reducir Bloom (resplandor)</span>
+                    </label>
+                    <label class="safe-setting-item">
+                        <input type="checkbox" id="safe-noFlash" onchange="toggleSafeSetting('noFlash')">
+                        <span>⚡ Sin Flash-Bang (pantallazos)</span>
+                    </label>
+                    <label class="safe-setting-item">
+                        <input type="checkbox" id="safe-noGlitch" onchange="toggleSafeSetting('noGlitch')">
+                        <span>🖥️ Sin Glitch (inversión colores)</span>
+                    </label>
+                    <label class="safe-setting-item">
+                        <input type="checkbox" id="safe-noShake" onchange="toggleSafeSetting('noShake')">
+                        <span>📳 Sin Vibración de cámara</span>
+                    </label>
+                    <label class="safe-setting-item">
+                        <input type="checkbox" id="safe-noParticles" onchange="toggleSafeSetting('noParticles')">
+                        <span>✨ Reducir Partículas</span>
+                    </label>
+                    <label class="safe-setting-item">
+                        <input type="checkbox" id="safe-noAnimations" onchange="toggleSafeSetting('noAnimations')">
+                        <span>🎭 Reducir Animaciones CSS</span>
+                    </label>
+                    <label class="safe-setting-item">
+                        <input type="checkbox" id="safe-noTicker" onchange="toggleSafeSetting('noTicker')">
+                        <span>📰 Parar News Ticker</span>
+                    </label>
+                </div>
+            </div>
+
+        </div>
+    </div>
 
     <script type="module" src="game.js"></script>
     <div id="modal-stats" class="modal-overlay" style="display:none;">
