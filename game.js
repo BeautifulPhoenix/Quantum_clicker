@@ -1,16 +1,338 @@
 import * as THREE from 'three';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 // ==========================================
 // 1. SISTEMA DE AUDIO
 // ==========================================
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const masterGain = audioCtx.createGain();
-masterGain.gain.value = 0.2; 
+masterGain.gain.value = 0.2;
 masterGain.connect(audioCtx.destination);
+
+// ==========================================
+// 0. SISTEMA DE MODO SEGURO (FOTOSENSIBILIDAD)
+// ==========================================
+let isSafeMode = false;
+
+// Ajustes granulares — cada efecto se puede activar/desactivar individualmente
+const safeSettings = {
+    noBloom: false,       // Reducir bloom (resplandor)
+    noFlash: false,       // Desactivar flash-bang (pantallazos blancos)
+    noGlitch: false,      // Desactivar screen glitch (inversión de colores)
+    noShake: false,       // Desactivar vibración de cámara
+    noParticles: false,   // Reducir partículas en eventos
+    noAnimations: false,  // Reducir animaciones CSS agresivas
+    noTicker: false       // Parar news ticker
+};
+
+const safeSettingsKeys = Object.keys(safeSettings);
+
+function saveSafeSettings() {
+    localStorage.setItem('qc_safeSettings', JSON.stringify(safeSettings));
+    localStorage.setItem('qc_safeMode', isSafeMode.toString());
+    applySafeSettingsToDOM();
+}
+
+function loadSafeSettings() {
+    try {
+        const saved = localStorage.getItem('qc_safeSettings');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            safeSettingsKeys.forEach(k => {
+                if (k in parsed) safeSettings[k] = parsed[k];
+            });
+        }
+    } catch (e) { /* ignorar JSON inválido */ }
+}
+
+function setAllSafeSettings(val) {
+    safeSettingsKeys.forEach(k => safeSettings[k] = val);
+    isSafeMode = val;
+}
+
+function applySafeSettingsToDOM() {
+    // Clase global CSS para animaciones y efectos
+    const anyActive = safeSettingsKeys.some(k => safeSettings[k]);
+    if (safeSettings.noAnimations) {
+        document.body.classList.add('safe-no-animations');
+    } else {
+        document.body.classList.remove('safe-no-animations');
+    }
+    if (safeSettings.noFlash) {
+        document.body.classList.add('safe-no-flash');
+    } else {
+        document.body.classList.remove('safe-no-flash');
+    }
+    if (safeSettings.noTicker) {
+        document.body.classList.add('safe-no-ticker');
+    } else {
+        document.body.classList.remove('safe-no-ticker');
+    }
+
+    // Bloom Three.js
+    if (composer && composer.passes) {
+        composer.passes.forEach(pass => {
+            if (pass.strength !== undefined) {
+                pass.strength = safeSettings.noBloom ? 0.3 : 1.2;
+                pass.radius = safeSettings.noBloom ? 0.1 : 0.5;
+            }
+        });
+    }
+
+    // Sincronizar checkboxes en modal de ajustes
+    safeSettingsKeys.forEach(k => {
+        const cb = document.getElementById('safe-' + k);
+        if (cb) cb.checked = safeSettings[k];
+    });
+    const masterCb = document.getElementById('toggle-safe-mode');
+    if (masterCb) masterCb.checked = isSafeMode;
+}
+
+function initSafeMode() {
+    const preference = localStorage.getItem('qc_safeMode');
+    if (preference !== null) {
+        isSafeMode = (preference === 'true');
+        loadSafeSettings();
+        // Si tiene isSafeMode pero no tenía granulares, activar todas
+        if (isSafeMode && !localStorage.getItem('qc_safeSettings')) {
+            setAllSafeSettings(true);
+        }
+        applySafeSettingsToDOM();
+        return;
+    }
+    showEpilepsyWarning();
+}
+
+function showEpilepsyWarning() {
+    const overlay = document.getElementById('modal-epilepsy');
+    if (overlay) overlay.style.display = 'flex';
+}
+
+window.acceptNormalMode = function () {
+    isSafeMode = false;
+    setAllSafeSettings(false);
+    saveSafeSettings();
+    document.getElementById('modal-epilepsy').style.display = 'none';
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+};
+
+window.acceptSafeMode = function () {
+    isSafeMode = true;
+    setAllSafeSettings(true);
+    saveSafeSettings();
+    document.getElementById('modal-epilepsy').style.display = 'none';
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+};
+
+// Master toggle: activa/desactiva TODO
+window.toggleSafeMode = function () {
+    isSafeMode = !isSafeMode;
+    setAllSafeSettings(isSafeMode);
+    saveSafeSettings();
+    if (isSafeMode) {
+        showNotification('🛡️ MODO SEGURO', 'Todos los efectos reducidos.');
+    } else {
+        showNotification('✨ MODO NORMAL', 'Efectos visuales completos.');
+    }
+};
+
+// Toggle individual de cada ajuste
+window.toggleSafeSetting = function (key) {
+    const cb = document.getElementById('safe-' + key);
+    if (cb) safeSettings[key] = cb.checked;
+    // Actualizar el estado global
+    isSafeMode = safeSettingsKeys.every(k => safeSettings[k]);
+    saveSafeSettings();
+};
+
+
+// ==========================================
+// 0.5 SISTEMA DE RADIO
+// ==========================================
+const radioStations = {
+    nightride: { name: '🌃 Nightride FM (Synthwave)', url: 'https://stream.nightride.fm/nightride.ogg' },
+    chillsynth: { name: '🌌 Nightride Chillsynth', url: 'https://stream.nightride.fm/chillsynth.ogg' },
+    ebsm: { name: '⚡ Nightride EBSM', url: 'https://stream.nightride.fm/ebsm.ogg' },
+    spacestation: { name: '🛸 SomaFM Space Station', url: 'https://ice1.somafm.com/spacestation-128-mp3' },
+    defcon: { name: '💀 SomaFM DEF CON Radio', url: 'https://ice1.somafm.com/defcon-128-mp3' },
+    vaporwaves: { name: '🌊 SomaFM Vaporwaves', url: 'https://ice1.somafm.com/vaporwaves-128-mp3' }
+};
+
+let radioAudio = new Audio();
+radioAudio.crossOrigin = 'anonymous';
+radioAudio.volume = 0.3;
+let radioPlaying = false;
+let currentStationId = '';
+
+function initRadio() {
+    const saved = localStorage.getItem('qc_radio');
+    if (saved) {
+        try {
+            const cfg = JSON.parse(saved);
+            radioAudio.volume = cfg.volume ?? 0.3;
+            currentStationId = cfg.station ?? '';
+            if (cfg.customUrl) {
+                const urlInput = document.getElementById('radio-custom-url');
+                if (urlInput) urlInput.value = cfg.customUrl;
+            }
+            // Restaurar UI
+            const volSlider = document.getElementById('radio-volume');
+            const volLabel = document.getElementById('radio-volume-label');
+            if (volSlider) volSlider.value = Math.round(radioAudio.volume * 100);
+            if (volLabel) volLabel.textContent = Math.round(radioAudio.volume * 100) + '%';
+            if (currentStationId) {
+                const sel = document.getElementById('radio-station-select');
+                if (sel) sel.value = currentStationId;
+                if (currentStationId === 'custom' && cfg.customUrl) {
+                    radioAudio.src = cfg.customUrl;
+                    updateRadioUI(cfg.customUrl);
+                    document.getElementById('custom-url-section').style.display = 'block';
+                } else if (radioStations[currentStationId]) {
+                    radioAudio.src = radioStations[currentStationId].url;
+                    updateRadioUI(radioStations[currentStationId].name);
+                }
+                // NO auto-play (requiere interacción del usuario)
+            }
+        } catch (e) { console.warn('Error loading radio config', e); }
+    }
+}
+
+function saveRadioConfig() {
+    const cfg = {
+        station: currentStationId,
+        volume: radioAudio.volume,
+        customUrl: document.getElementById('radio-custom-url')?.value || ''
+    };
+    localStorage.setItem('qc_radio', JSON.stringify(cfg));
+}
+
+function updateRadioUI(stationName) {
+    const nameEl = document.getElementById('radio-station-name');
+    const iconEl = document.getElementById('radio-status-icon');
+    const btnEl = document.getElementById('btn-radio-toggle');
+    if (nameEl) nameEl.textContent = stationName || 'Sin emisora';
+    if (iconEl) iconEl.textContent = radioPlaying ? '🔊' : '⏸️';
+    if (btnEl) btnEl.textContent = radioPlaying ? '⏸️' : '▶️';
+
+    // Actualizar mini-player persistente
+    const miniIcon = document.getElementById('radio-mini-icon');
+    const miniText = document.getElementById('radio-mini-text');
+    if (miniIcon) miniIcon.textContent = radioPlaying ? '🔊' : '🔇';
+    if (miniText) {
+        if (radioPlaying && stationName) {
+            miniText.textContent = '♪ ' + stationName;
+            miniText.classList.add('radio-mini-active');
+        } else {
+            miniText.textContent = 'Radio apagada';
+            miniText.classList.remove('radio-mini-active');
+        }
+    }
+}
+
+window.toggleRadio = function () {
+    if (!radioAudio.src || radioAudio.src === window.location.href) {
+        // No hay emisora seleccionada, seleccionar Nightride por defecto
+        changeStation('nightride');
+        const sel = document.getElementById('radio-station-select');
+        if (sel) sel.value = 'nightride';
+        return;
+    }
+    if (radioPlaying) {
+        radioAudio.pause();
+        radioPlaying = false;
+    } else {
+        radioAudio.play().catch(e => console.warn('Radio play failed:', e));
+        radioPlaying = true;
+    }
+    updateRadioUI(getCurrentStationName());
+};
+
+window.setRadioVolume = function (val) {
+    const v = parseInt(val);
+    radioAudio.volume = v / 100;
+    const label = document.getElementById('radio-volume-label');
+    if (label) label.textContent = v + '%';
+    saveRadioConfig();
+};
+
+window.changeStation = function (stationId) {
+    currentStationId = stationId;
+    const customSection = document.getElementById('custom-url-section');
+
+    if (stationId === 'custom') {
+        if (customSection) customSection.style.display = 'block';
+        radioAudio.pause();
+        radioPlaying = false;
+        updateRadioUI('Introduce tu URL...');
+        saveRadioConfig();
+        return;
+    }
+
+    if (customSection) customSection.style.display = 'none';
+
+    if (!stationId || !radioStations[stationId]) {
+        radioAudio.pause();
+        radioAudio.src = '';
+        radioPlaying = false;
+        updateRadioUI('Sin emisora');
+        saveRadioConfig();
+        return;
+    }
+
+    const station = radioStations[stationId];
+    radioAudio.src = station.url;
+    radioAudio.play().catch(e => console.warn('Radio play failed:', e));
+    radioPlaying = true;
+    updateRadioUI(station.name);
+    saveRadioConfig();
+};
+
+window.applyCustomUrl = function () {
+    const urlInput = document.getElementById('radio-custom-url');
+    const url = urlInput?.value?.trim();
+    if (!url) return;
+
+    currentStationId = 'custom';
+    radioAudio.src = url;
+    radioAudio.play().catch(e => console.warn('Custom radio failed:', e));
+    radioPlaying = true;
+    updateRadioUI('🔗 ' + new URL(url).hostname);
+    saveRadioConfig();
+};
+
+function getCurrentStationName() {
+    if (currentStationId === 'custom') {
+        const url = document.getElementById('radio-custom-url')?.value;
+        try { return '🔗 ' + new URL(url).hostname; } catch (e) { return '🔗 Custom'; }
+    }
+    return radioStations[currentStationId]?.name || 'Sin emisora';
+}
+
+// Manejar errores de streaming
+radioAudio.addEventListener('error', () => {
+    radioPlaying = false;
+    updateRadioUI('❌ Error de conexión');
+});
+
+// ==========================================
+// 0.6 PANEL DE AJUSTES (SETTINGS)
+// ==========================================
+window.openSettings = function () {
+    const modal = document.getElementById('modal-settings');
+    if (modal) {
+        // Sincronizar todos los checkboxes granulares
+        applySafeSettingsToDOM();
+        modal.style.display = 'flex';
+    }
+};
+
+window.closeSettings = function () {
+    const modal = document.getElementById('modal-settings');
+    if (modal) modal.style.display = 'none';
+};
 
 function playTone(freq, type, duration, vol = 0.1) {
     if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -26,12 +348,12 @@ function playTone(freq, type, duration, vol = 0.1) {
     osc.stop(audioCtx.currentTime + duration);
 }
 
-function sfxClick() { 
-    playTone(800 + Math.random()*200, 'sine', 0.1, 0.1); 
+function sfxClick() {
+    playTone(800 + Math.random() * 200, 'sine', 0.1, 0.1);
     playTone(200, 'triangle', 0.05, 0.1);
 }
-function sfxBuy() { 
-    playTone(150, 'square', 0.2, 0.1); 
+function sfxBuy() {
+    playTone(150, 'square', 0.2, 0.1);
     playTone(400, 'sawtooth', 0.1, 0.05);
 }
 function sfxAnomaly() {
@@ -50,49 +372,49 @@ const buildingsConfig = [
     // TIER 1: MECÁNICO
     { id: 'cursor', name: 'Generador de Manivela', type: 'click', baseCost: 15, basePower: 1, desc: '+1 W por click (Manual)', icon: '👆' },
     { id: 'grandma', name: 'Hámster en Rueda', type: 'auto', baseCost: 100, basePower: 1, desc: '+1 W/s (Bio-energía básica)', icon: '🐹' },
-    
+
     // TIER 2: ELÉCTRICO
     { id: 'farm', name: 'Panel Solar', type: 'auto', baseCost: 1100, basePower: 8, desc: '+8 W/s (Fotovoltaica)', icon: '☀️' },
     { id: 'mine', name: 'Turbina Eólica', type: 'auto', baseCost: 12000, basePower: 47, desc: '+47 W/s (Eólica)', icon: '🌬️' },
-    
+
     // TIER 3: INDUSTRIAL
     { id: 'factory', name: 'Central Hidroeléctrica', type: 'auto', baseCost: 130000, basePower: 260, desc: '+260 W/s (Hidráulica)', icon: '💧' },
     { id: 'bank', name: 'Reactor Nuclear', type: 'auto', baseCost: 1400000, basePower: 1400, desc: '+1.4 kW/s (Fisión)', icon: '☢️' },
-    
+
     // TIER 4: CUÁNTICO
     { id: 'temple', name: 'Reactor de Fusión', type: 'auto', baseCost: 20000000, basePower: 7800, desc: '+7.8 kW/s (Fusión)', icon: '⚛️' },
     { id: 'portal', name: 'Matriz de Dyson', type: 'auto', baseCost: 330000000, basePower: 44000, desc: '+44 kW/s (Estelar)', icon: '🛰️' },
 
     // --- TIER ÉLITE: ANDRÓMEDA (Solo vía Comerciantes) ---
-    { 
-        id: 'andromeda_siphon', 
-        name: 'Sifón de Vacío', 
-        type: 'auto', 
+    {
+        id: 'andromeda_siphon',
+        name: 'Sifón de Vacío',
+        type: 'auto',
         baseCost: 5000000000, // 5 Billones
-        basePower: 1000000, 
-        desc: 'Extrae energía del tejido espacial. Produce 1 MW/s.', 
-        icon: '🕳️', 
-        isAndromeda: true 
+        basePower: 1000000,
+        desc: 'Extrae energía del tejido espacial. Produce 1 MW/s.',
+        icon: '🕳️',
+        isAndromeda: true
     },
-    { 
-        id: 'andromeda_bazar', 
-        name: 'Bazar Galáctico', 
-        type: 'auto', 
+    {
+        id: 'andromeda_bazar',
+        name: 'Bazar Galáctico',
+        type: 'auto',
         baseCost: 25000000000, // 25 Billones
-        basePower: 5000000, 
-        desc: 'Sinergia comercial: +5% producción global por unidad.', 
-        icon: '🏪', 
-        isAndromeda: true 
+        basePower: 5000000,
+        desc: 'Sinergia comercial: +5% producción global por unidad.',
+        icon: '🏪',
+        isAndromeda: true
     },
-    { 
-        id: 'andromeda_dyson', 
-        name: 'Esfera Dyson Enana', 
-        type: 'auto', 
+    {
+        id: 'andromeda_dyson',
+        name: 'Esfera Dyson Enana',
+        type: 'auto',
         baseCost: 100000000000, // 100 Billones
-        basePower: 25000000, 
-        desc: 'Multiplica el poder de tu Prestigio por 1.1x.', 
-        icon: '🌟', 
-        isAndromeda: true 
+        basePower: 25000000,
+        desc: 'Multiplica el poder de tu Prestigio por 1.1x.',
+        icon: '🌟',
+        isAndromeda: true
     }
 ];
 
@@ -100,23 +422,23 @@ const buildingsConfig = [
 
 
 const pearlsConfig = {
-    red: { 
-        name: "Perla de la Entropía", 
-        desc: "El poder del fin. Multiplica la Producción Global x10.", 
-        bonusType: 'production', 
-        value: 10 
+    red: {
+        name: "Perla de la Entropía",
+        desc: "El poder del fin. Multiplica la Producción Global x10.",
+        bonusType: 'production',
+        value: 10
     },
-    blue: { 
-        name: "Perla del Tiempo", 
-        desc: "El poder del tiempo. Los Clicks son x50 más potentes.", 
-        bonusType: 'click', 
-        value: 50 
+    blue: {
+        name: "Perla del Tiempo",
+        desc: "El poder del tiempo. Los Clicks son x50 más potentes.",
+        bonusType: 'click',
+        value: 50
     },
-    green: { 
-        name: "Perla de la Vida", 
-        desc: "El poder del origen. Todo es un 50% más barato.", 
-        bonusType: 'discount', 
-        value: 0.5 
+    green: {
+        name: "Perla de la Vida",
+        desc: "El poder del origen. Todo es un 50% más barato.",
+        bonusType: 'discount',
+        value: 0.5
     }
 };
 
@@ -133,19 +455,19 @@ let game = {
     cookies: 0,
     totalCookiesEarned: 0,
     clickCount: 0,
-    totalClicks: 0, 
-    anomaliesClicked: 0, 
-    totalTimePlayed: 0, 
+    totalClicks: 0,
+    anomaliesClicked: 0,
+    totalTimePlayed: 0,
     prestigeMult: 1,
     antimatter: 0,
     prestigeLevel: 0,
     buildings: {},
-    achievements: [], 
+    achievements: [],
     upgrades: [],
     heavenlyUpgrades: [],
     pearls: [],
     activePearl: null,
-    helpers: [] 
+    helpers: []
 };
 
 // Variables temporales (no se guardan)
@@ -164,16 +486,18 @@ let isIntroActive = false;
 let buffEndTime = 0;
 let buffDuration = 0; // 10 segundos en milisegundos
 let anomalyTimeout = null; // Guardará el temporizador para poder limpiarlo
+let introDroneOscillator = null; // Zumbido del reactor
+let introDroneGain = null;
 
 function startIntroSequence() {
     isIntroActive = true;
     document.body.classList.add('intro-mode');
-    
+
     // 1. EL VACÍO ABSOLUTO
-    if(mainObject) {
+    if (mainObject) {
         mainObject.material.emissiveIntensity = 0;
-        mainObject.material.color.setHex(0x000000); 
-        glowMesh.visible = false; 
+        mainObject.material.color.setHex(0x000000);
+        glowMesh.visible = false;
     }
 
     // --- NUEVO: OCULTAR ESTRELLAS (Para que no se vean puntos estáticos) ---
@@ -181,9 +505,37 @@ function startIntroSequence() {
         starMesh.visible = false;
     }
     // ---------------------------------------------------------------------
-    
+
     // Resetear partículas intro
-    if(introParticlesMesh) introParticlesMesh.material.opacity = 0;
+    if (introParticlesMesh) introParticlesMesh.material.opacity = 0;
+
+    // INICIAR SONIDO "DRONE" DE FONDO (FUSIÓN DEL NÚCLEO)
+    if (audioCtx && !safeSettings.noShake) { // Respetar ajuste de sonido/shake
+        try {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            // Oscilador grave (hum)
+            introDroneOscillator = audioCtx.createOscillator();
+            introDroneGain = audioCtx.createGain();
+
+            introDroneOscillator.type = 'sawtooth';
+            introDroneOscillator.frequency.value = 40; // 40Hz (muy grave)
+
+            // Filtro paso bajo para suavizar
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 200;
+
+            introDroneOscillator.connect(filter);
+            filter.connect(introDroneGain);
+            introDroneGain.connect(audioCtx.destination);
+
+            introDroneGain.gain.setValueAtTime(0, audioCtx.currentTime);
+            introDroneGain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 2); // Fade in suave
+
+            introDroneOscillator.start();
+        } catch (e) { console.warn("Audio intro error:", e); }
+    }
 
     showIntroText("Detectando vacío cuántico...");
 }
@@ -192,56 +544,68 @@ startMerchantLoop();
 
 function handleIntroClick() {
     // Si ya hemos llegado al final, IGNORAR clicks extra para no romper la cinemática
-    if (introClicks >= INTRO_TOTAL_CLICKS) return; 
+    if (introClicks >= INTRO_TOTAL_CLICKS) return;
 
     introClicks++;
-    
+
     // Progreso de 0.0 a 1.0 basado en 100 clicks
     const progress = Math.min(1.0, introClicks / INTRO_TOTAL_CLICKS);
-    
+
     // --- EFECTOS VISUALES ---
-    if(mainObject) {
+    if (mainObject) {
         // Temblor
-        const shake = progress * 0.5; 
-        mainObject.rotation.x += (Math.random()-0.5) * shake;
-        mainObject.rotation.y += (Math.random()-0.5) * shake;
+        const shake = progress * 0.5;
+        mainObject.rotation.x += (Math.random() - 0.5) * shake;
+        mainObject.rotation.y += (Math.random() - 0.5) * shake;
 
         // Color (Negro -> Rojo -> Blanco)
         if (progress < 0.4) {
             const localP = progress / 0.4;
-            mainObject.material.color.setHSL(0.0, 1.0, localP * 0.15); 
+            mainObject.material.color.setHSL(0.0, 1.0, localP * 0.15);
             mainObject.material.emissive.setHSL(0.0, 1.0, localP * 0.05);
-        } 
+        }
         else if (progress < 0.8) {
             const localP = (progress - 0.4) / 0.4;
-            mainObject.material.color.setHSL(0.08 * localP, 1.0, 0.15 + (localP * 0.35)); 
+            mainObject.material.color.setHSL(0.08 * localP, 1.0, 0.15 + (localP * 0.35));
             mainObject.material.emissiveIntensity = localP * 0.8;
         }
         else {
             const localP = (progress - 0.8) / 0.2;
-            mainObject.material.color.setHSL(0.12, 1.0, 0.5 + (localP * 0.5)); 
-            mainObject.material.emissiveIntensity = 0.8 + (localP * 3.0); 
-            
+            mainObject.material.color.setHSL(0.12, 1.0, 0.5 + (localP * 0.5));
+            mainObject.material.emissiveIntensity = 0.8 + (localP * 3.0);
+
             glowMesh.visible = true;
             glowMesh.material.opacity = localP;
             glowMesh.scale.setScalar(1.0 + (Math.random() * 0.2));
         }
 
         // Partículas
-        if(introParticlesMesh) {
-            introParticlesMesh.material.opacity = progress; 
-            introParticlesMesh.rotation.y += 0.02 + (progress * 0.1); 
-            introParticlesMesh.scale.setScalar(1.5 - (progress * 0.8)); 
+        if (introParticlesMesh) {
+            introParticlesMesh.material.opacity = progress;
+            introParticlesMesh.rotation.y += 0.02 + (progress * 0.1);
+            introParticlesMesh.scale.setScalar(1.5 - (progress * 0.8));
         }
     }
 
-    // --- NARRATIVA ---
+    // --- TEXTO NARRATIVO Y AUDIO ---
+    // Modulación del drone
+    if (introDroneOscillator && introDroneGain) {
+        try {
+            const baseFreq = 40;
+            const targetFreq = 40 + (progress * 200); // Sube hasta 240Hz
+            introDroneOscillator.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
+
+            const targetGain = 0.15 + (progress * 0.2); // Sube volumen
+            introDroneGain.gain.setTargetAtTime(targetGain, audioCtx.currentTime, 0.1);
+        } catch (e) { }
+    }
+
     if (introClicks === 1) showIntroText("Iniciando compresión de materia...");
     else if (introClicks === 20) { playTone(50, 'sawtooth', 0.2); showIntroText("Temperatura central en aumento."); }
     else if (introClicks === 50) { playTone(100, 'square', 0.3); showIntroText("Fricción atómica detectada. Continúa."); }
     else if (introClicks === 65) { playTone(300, 'sawtooth', 0.6); showIntroText("¡ADVERTENCIA: MASA CRÍTICA ALCANZADA!"); }
     else if (introClicks === 85) { playTone(600, 'sine', 1.0); showIntroText("¡COLAPSO INMINENTE!"); }
-    
+
     // AL FINALIZAR: Llamamos una sola vez
     else if (introClicks === INTRO_TOTAL_CLICKS) {
         finishIntro();
@@ -257,98 +621,124 @@ function showIntroText(text) {
     setTimeout(() => {
         el.innerText = text;
         el.style.opacity = 1;
-    }, 1000);
+    }, 200);
 }
 
 function finishIntro() {
+    // Detener drone
+    if (introDroneOscillator) {
+        try {
+            introDroneGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1);
+            introDroneOscillator.stop(audioCtx.currentTime + 1);
+        } catch (e) { }
+        introDroneOscillator = null;
+        introDroneGain = null;
+    }
+
     // 1. Quitar partículas de intro inmediatamente
-    if(typeof introParticlesMesh !== 'undefined' && introParticlesMesh) {
+    if (introParticlesMesh) {
         scene.remove(introParticlesMesh);
+        introParticlesMesh.geometry.dispose();
+        introParticlesMesh.material.dispose();
         introParticlesMesh = null;
     }
 
-    const el = document.getElementById('intro-text');
-    if(el) el.style.opacity = 0;
+    // 2. Flash Blanco (Big Bang)
+    const flash = document.createElement('div');
+    flash.className = 'flash-bang';
+    document.body.appendChild(flash);
+
+    // Sonido EXPLOSIÓN REVERB (simulado)
+    if (!safeSettings.noShake) {
+        playTone(50, 'sawtooth', 1.5, 0.5);
+        setTimeout(() => playTone(30, 'square', 2.0, 1.0), 100);
+        setTimeout(() => playTone(100, 'noise', 1.0, 1.5), 200);
+    }
+
+    // Eliminar flash visual después de un rato
+    setTimeout(() => {
+        if (flash && flash.parentNode) flash.remove();
+    }, 2500);
 
     // SECUENCIA CINEMATOGRÁFICA
+    // T+150ms: Primera frase
     setTimeout(() => {
-        el.innerText = "“La energía no se crea ni se destruye...”";
-        el.style.opacity = 1;
-        
+        const el = document.getElementById('intro-text');
+        if (el) el.innerText = "“La energía no se crea ni se destruye...”";
+
+        // T+3000ms: Segunda frase
         setTimeout(() => {
-            el.style.opacity = 0;
+            if (el) el.innerText = "...solo se acumula.";
+
+            // T+6000ms: Título
             setTimeout(() => {
-                el.innerText = "“...solo se transforma.”";
-                el.style.opacity = 1;
-                
+                if (el) el.innerHTML = "<span style='font-size:3rem; color:#00e5ff; text-shadow:0 0 20px #00e5ff'>QUANTUM CLICKER</span><br><span style='font-size:1rem; color:#aaa'>Iniciando sistemas principales...</span>";
+
+                // T+9000ms: Frase final
                 setTimeout(() => {
-                    el.style.opacity = 0;
+                    if (el) el.innerText = "Aquí empieza tu imperio.";
+
+                    // T+11000ms: FINALIZAR INTRO
                     setTimeout(() => {
-                        el.innerText = "Aquí empieza tu imperio.";
-                        el.style.color = "#00ff88"; 
-                        el.style.opacity = 1;
-
-                        // --- EL FLASH ---
-                        setTimeout(() => {
-                            const flash = document.createElement('div');
-                            flash.className = 'flash-bang';
-                            document.body.appendChild(flash);
-                            
-                            playTone(50, 'sine', 3.0); 
-                            sfxAnomaly(); 
-
-                            // TRANSICIÓN AL JUEGO (Muy rápida tras el flash)
+                        // Ocultar capa de intro
+                        const layer = document.getElementById('intro-layer');
+                        if (layer) {
+                            layer.style.opacity = 0;
                             setTimeout(() => {
-                                isIntroActive = false;
+                                layer.style.display = 'none';
                                 document.body.classList.remove('intro-mode');
-                                if(el) el.innerText = "";
-                                
-                                // Restaurar Bola Verde
-                                if(mainObject) {
-                                    mainObject.material.color.setHex(0x00ff88); 
-                                    mainObject.material.emissive.setHex(0x004422);
-                                    mainObject.material.emissiveIntensity = 0.5;
-                                    mainObject.scale.setScalar(1);
-                                    mainObject.rotation.set(0,0,0);
-                                }
-                                if(glowMesh) {
-                                    glowMesh.visible = true;
-                                    glowMesh.material.opacity = 1;
-                                    glowMesh.scale.setScalar(1.2);
-                                }
+                            }, 1000);
+                        }
 
-                                // Mostrar Estrellas ahora
-                                if (typeof starMesh !== 'undefined' && starMesh) {
-                                    starMesh.visible = true;
-                                }
-
-                                saveGame();
-                                setTimeout(spawnAnomaly, 10000);
-
-                            }, 150); // 150ms después del flash blanco
-
-                            // Limpiar el flash del DOM
+                        // ACTIVAR RADIO AUTOMÁTICAMENTE (Nightride FM)
+                        if (!radioPlaying) {
                             setTimeout(() => {
-                                if(flash && flash.parentNode) flash.remove();
-                            }, 2000);
+                                changeStation('nightride');
+                                showNotification('📻 RADIO ACTIVADA', 'Sintonizando Nightride FM...');
+                            }, 1000);
+                        }
 
-                        }, 3000); // Leer frase final
-                    }, 1500);
-                }, 4000); // Leer frase 2
-            }, 1500); 
-        }, 4000); // Leer frase 1
-    }, 1000); 
+                        // TRANSICIÓN AL JUEGO
+                        isIntroActive = false;
+
+                        // Restaurar estrellas visualmente
+                        if (typeof starMesh !== 'undefined' && starMesh) starMesh.visible = true;
+
+                        // Restaurar núcleo
+                        if (mainObject) {
+                            mainObject.material.emissiveIntensity = 0.5;
+                            mainObject.material.color.setHex(0x00ff88);
+                            mainObject.material.emissive.setHex(0x003311);
+                            if (glowMesh) {
+                                glowMesh.visible = true;
+                                glowMesh.material.opacity = 0.6;
+                            }
+                        }
+
+                        // Guardar que ya se hizo la intro
+                        saveGame();
+
+                        // Iniciar loop de anomalías
+                        setTimeout(spawnAnomaly, 10000);
+
+                    }, 2000); // Wait 2s on "Aquí empieza tu imperio"
+                }, 3000); // Wait 3s on Title
+            }, 3000); // Wait 3s on Phrase 2
+        }, 3000); // Wait 3s on Phrase 1
+    }, 150);
 }
-
-
 function triggerOmegaFinalAnimation() {
     isIntroActive = true; // Bloqueamos interacciones
-    const duration = 5000; // 5 segundos
+    const duration = safeSettings.noShake ? 2000 : 5000;
     const startTime = Date.now();
 
     // 1. Efecto de sonido inicial (Estruendo)
-    playTone(40, 'sawtooth', 4.0, 0.5);
-    playTone(100, 'sine', 5.0, 0.3);
+    if (!safeSettings.noShake) {
+        playTone(40, 'sawtooth', 4.0, 0.5);
+        playTone(100, 'sine', 5.0, 0.3);
+    } else {
+        playTone(100, 'sine', 1.0, 0.15);
+    }
 
     const omegaInterval = setInterval(() => {
         const elapsed = Date.now() - startTime;
@@ -356,37 +746,44 @@ function triggerOmegaFinalAnimation() {
 
         if (progress >= 1) {
             clearInterval(omegaInterval);
-            finishOmegaEvent(); // Función que limpia y da la perla
+            finishOmegaEvent();
             return;
         }
 
         // --- EFECTOS EN EL NÚCLEO (Three.js) ---
         if (mainObject && glowMesh) {
-            // Vibración violenta in crescendo
-            mainObject.position.x = (Math.random() - 0.5) * progress * 2;
-            mainObject.position.y = (Math.random() - 0.5) * progress * 2;
-            
-            // La malla de brillo se expande descontroladamente
-            glowMesh.scale.setScalar(1.2 + progress * 5);
-            glowMesh.material.opacity = Math.sin(Date.now() * 0.05); // Parpadeo epiléptico
-            
-            // Cambio de color a blanco incandescente
-            mainObject.material.emissiveIntensity = progress * 10;
-            mainObject.material.color.lerp(new THREE.Color(0xffffff), 0.1);
+            if (safeSettings.noShake) {
+                // Modo seguro: solo escala suave, sin vibración
+                mainObject.scale.setScalar(1 + progress * 0.5);
+                glowMesh.scale.setScalar(1.2 + progress * 1.5);
+                mainObject.material.emissiveIntensity = 0.6 + progress * 2;
+            } else {
+                // Modo normal: vibración completa
+                mainObject.position.x = (Math.random() - 0.5) * progress * 2;
+                mainObject.position.y = (Math.random() - 0.5) * progress * 2;
+                glowMesh.scale.setScalar(1.2 + progress * 5);
+                glowMesh.material.opacity = Math.sin(Date.now() * 0.05);
+                mainObject.material.emissiveIntensity = progress * 10;
+                mainObject.material.color.lerp(new THREE.Color(0xffffff), 0.1);
+            }
         }
 
-        // --- EFECTOS DE CÁMARA ---
-        camera.position.z = 8 - (progress * 4); // La cámara se acerca al colapso
-        camera.rotation.z += progress * 0.2; // La realidad se tuerce
-
-        // --- EFECTOS DE PANTALLA (Glitch visual) ---
-        if (Math.random() > 0.9) {
-            document.body.style.filter = `invert(1) hue-rotate(${Math.random() * 360}deg)`;
-        } else {
-            document.body.style.filter = "none";
+        // --- EFECTOS DE CÁMARA (solo modo normal) ---
+        if (!safeSettings.noShake) {
+            camera.position.z = 8 - (progress * 4);
+            camera.rotation.z += progress * 0.2;
         }
 
-    }, 1000 / 60); // 60 FPS
+        // --- EFECTOS DE PANTALLA (solo modo normal) ---
+        if (!safeSettings.noGlitch) {
+            if (Math.random() > 0.9) {
+                document.body.style.filter = `invert(1) hue-rotate(${Math.random() * 360}deg)`;
+            } else {
+                document.body.style.filter = "none";
+            }
+        }
+
+    }, 1000 / 60);
 }
 
 
@@ -401,12 +798,12 @@ function finishOmegaEvent() {
     // 2. Aplicar cambios definitivos
     isApocalypse = true;
     unlockPearl('red');
-    
+
     // Resetear transformaciones de cámara y objeto
-    mainObject.position.set(0,0,0);
+    mainObject.position.set(0, 0, 0);
     mainObject.scale.setScalar(1);
-    camera.position.set(0,0,8);
-    camera.rotation.set(0,0,0);
+    camera.position.set(0, 0, 8);
+    camera.rotation.set(0, 0, 0);
     document.body.style.filter = "none";
 
     // 3. Limpiar flash y mostrar mensaje final
@@ -414,8 +811,8 @@ function finishOmegaEvent() {
         if (flash.parentNode) flash.remove();
         isIntroActive = false;
         showSystemModal(
-            "🔴 SINGULARIDAD ALCANZADA", 
-            "El núcleo ha colapsado. La Perla de la Entropía es tuya.\nLa realidad ya no volverá a ser la misma.", 
+            "🔴 SINGULARIDAD ALCANZADA",
+            "El núcleo ha colapsado. La Perla de la Entropía es tuya.\nLa realidad ya no volverá a ser la misma.",
             false, null
         );
         renderStore();
@@ -449,104 +846,105 @@ const MAX_HELPERS = 4; // Solo 4 huecos
 
 const helpersConfig = [
     // TIER 1 (PRINCIPIANTE - INFRAESTRUCTURA)
-    { 
+    {
         id: 'h_clicker',
         quotes: ["La transferencia cinética es estable. Sigue pulsando, cada Watt cuenta.", "He ajustado los condensadores manuales. ¡Siento el flujo!"],
-        name: '👩‍🔬 Dra. Aris Thorne', 
-        desc: 'Teórica de Campos. Optimiza la transferencia cinética: Pulsos manuales +300%.', 
-        cost: 15, icon: '👩‍🔬', 
-        reqLevel: 5, 
-        effect: 'clickPower', value: 3 
+        name: '👩‍🔬 Dra. Aris Thorne',
+        desc: 'Teórica de Campos. Optimiza la transferencia cinética: Pulsos manuales +300%.',
+        cost: 15, icon: '👩‍🔬',
+        reqLevel: 5,
+        effect: 'clickPower', value: 3
     },
-    { 
+    {
         id: 'h_miner',
-        quotes: ["He parcheado una fuga en el sector 4. La producción automática ha subido.", "¿Ves ese zumbido? Es el sonido de la eficiencia pura."], 
-        name: '👨‍💻 Ing. Marcus Voltz', 
-        desc: 'Arquitecto de Red. Maximiza el flujo constante de los generadores automáticos (+50% W/s).', 
-        cost: 50, icon: '👨‍💻', 
-        reqLevel: 10, 
-        effect: 'cpsMultiplier', value: 1.5 
+        quotes: ["He parcheado una fuga en el sector 4. La producción automática ha subido.", "¿Ves ese zumbido? Es el sonido de la eficiencia pura."],
+        name: '👨‍💻 Ing. Marcus Voltz',
+        desc: 'Arquitecto de Red. Maximiza el flujo constante de los generadores automáticos (+50% W/s).',
+        cost: 50, icon: '👨‍💻',
+        reqLevel: 10,
+        effect: 'cpsMultiplier', value: 1.5
     },
-    
+
     // TIER 2 (INTERMEDIO - LOGÍSTICA)
-    { 
+    {
         id: 'h_discount',
         quotes: ["He conseguido materiales de grafeno a mitad de precio. Es hora de construir.", "La logística galáctica es un arte. Hoy los reactores salen baratos."],
-        name: '👔 Silas Vane', 
-        desc: 'Logista Cuántico. Negocia contratos de suministros: Estructuras -10% de coste.', 
-        cost: 100, icon: '👔', 
-        reqLevel: 15, 
-        effect: 'costReduction', value: 0.9 
+        name: '👔 Silas Vane',
+        desc: 'Logista Cuántico. Negocia contratos de suministros: Estructuras -10% de coste.',
+        cost: 100, icon: '👔',
+        reqLevel: 15,
+        effect: 'costReduction', value: 0.9
     },
-    { 
+    {
         id: 'h_combo',
         quotes: ["He estabilizado el campo temporal. El combo no se irá a ninguna parte.", "Mantén el ritmo, estoy desviando el exceso de calor para alargar el pico."],
-        name: '👩‍⚡ Dra. Elena Flux', 
-        desc: 'Especialista en Transitorios. Estabiliza picos de energía: Combos duran x2 tiempo.', 
-        cost: 200, icon: '👩‍⚡', 
-        reqLevel: 20, 
-        effect: 'comboTime', value: 2 
+        name: '👩‍⚡ Dra. Elena Flux',
+        desc: 'Especialista en Transitorios. Estabiliza picos de energía: Combos duran x2 tiempo.',
+        cost: 200, icon: '👩‍⚡',
+        reqLevel: 20,
+        effect: 'comboTime', value: 2
     },
 
     // TIER 3 (AVANZADO - INVESTIGACIÓN)
-    { 
+    {
         id: 'h_anomaly',
         quotes: ["Mis escáneres detectan una fluctuación cuántica inminente... ¡atento!", "El vacío nos está susurrando. Una anomalía está a punto de cruzar."],
-        name: '🕵️‍♂️ Dorian Nox', 
-        desc: 'Analista de Vacío. Sensores de largo alcance: Anomalías aparecen x2 rápido.', 
-        cost: 500, icon: '🕵️‍♂️', 
-        reqLevel: 30, 
-        effect: 'anomalyRate', value: 2 
+        name: '🕵️‍♂️ Dorian Nox',
+        desc: 'Analista de Vacío. Sensores de largo alcance: Anomalías aparecen x2 rápido.',
+        cost: 500, icon: '🕵️‍♂️',
+        reqLevel: 30,
+        effect: 'anomalyRate', value: 2
     },
-    { 
+    {
         id: 'h_crit',
         quotes: ["¡Fuego a discreción! He cargado el núcleo con munición de alto impacto.", "Si golpeas en el ángulo de 45 grados, la energía se multiplica por diez."],
-        name: '👮‍♂️ Sargento Kael', 
-        desc: 'Seguridad de Red. Protocolos de choque: 10% probabilidad de Pulso Crítico (x10).', 
-        cost: 800, icon: '👮‍♂️', 
-        reqLevel: 40, 
-        effect: 'critChance', value: 0.1 
+        name: '👮‍♂️ Sargento Kael',
+        desc: 'Seguridad de Red. Protocolos de choque: 10% probabilidad de Pulso Crítico (x10).',
+        cost: 800, icon: '👮‍♂️',
+        reqLevel: 40,
+        effect: 'critChance', value: 0.1
     },
 
     // TIER 4 (EXPERTO - GESTIÓN)
-    { 
+    {
         id: 'h_efficiency',
         quotes: ["He optimizado los disipadores. El equipo puede trabajar más por menos.", "La entropía es nuestra enemiga, pero mis cálculos la mantienen a raya."],
-        name: '🔬 Dra. Sarah Joule', 
-        desc: 'Termodinámica Sénior. Disipación de calor: Mantenimiento del Staff -40% Watts.', 
-        cost: 1500, 
-        icon: '🔬', 
-        reqLevel: 60, 
-        effect: 'helperMaintenance', 
-        value: 0.6 
+        name: '🔬 Dra. Sarah Joule',
+        desc: 'Termodinámica Sénior. Disipación de calor: Mantenimiento del Staff -40% Watts.',
+        cost: 1500,
+        icon: '🔬',
+        reqLevel: 60,
+        effect: 'helperMaintenance',
+        value: 0.6
     },
-    { 
+    {
         id: 'h_banker',
         quotes: ["El mercado energético está al alza. Es el momento de captar anomalías.", "He vendido el excedente de Watts en el mercado negro. ¡Más capital para ti!"],
-        name: '📉 Victor "Broker" Ray', 
-        desc: 'Especulador Energético. Arbitraje de mercado: Anomalías de capital dan +50%.', 
-        cost: 2000, icon: '📉', 
-        reqLevel: 65, 
-        effect: 'goldenCookieBuff', value: 1.5 
+        name: '📉 Victor "Broker" Ray',
+        desc: 'Especulador Energético. Arbitraje de mercado: Anomalías de capital dan +50%.',
+        cost: 2000, icon: '📉',
+        reqLevel: 65,
+        effect: 'goldenCookieBuff', value: 1.5
     },
 
     // TIER 5 (MAESTRO - INTELIGENCIA ARTIFICIAL)
-    { 
+    {
         id: 'h_synergy',
-        quotes: ["Análisis completado: Cada estructura añadida mejora mi capacidad de cálculo.", "Unidad detectada. Integrando eficiencia estructural en el sistema central."], 
-        name: '🤖 IA "Mente Enlazada"', 
-        desc: 'Integración Sintética. Gestión total: +1% W/s por cada estructura desplegada.', 
-        cost: 5000, icon: '🤖', 
-        reqLevel: 80, 
-        effect: 'buildingSynergy', value: 0.01 
+        quotes: ["Análisis completado: Cada estructura añadida mejora mi capacidad de cálculo.", "Unidad detectada. Integrando eficiencia estructural en el sistema central."],
+        name: '🤖 IA "Mente Enlazada"',
+        desc: 'Integración Sintética. Gestión total: +1% W/s por cada estructura desplegada.',
+        cost: 5000, icon: '🤖',
+        reqLevel: 80,
+        effect: 'buildingSynergy', value: 0.01
     },
-    { 
-        id: 'h_master', 
-        name: '👨‍💼 Director Cipher', 
-        desc: 'Administrador General. Ejecuta el Protocolo Dios: Potencia Global x2.0.', 
-        cost: 10000, icon: '👨‍💼', 
-        reqLevel: 100, 
-        effect: 'globalMultiplier', value: 2.0 
+    {
+        id: 'h_master',
+        name: '👨‍💼 Director Cipher',
+        quotes: ["Protocolo Maestro activado. La producción global se ha duplicado.", "Director Cipher reportando. Todos los sistemas bajo control absoluto."],
+        desc: 'Administrador General. Ejecuta el Protocolo Dios: Potencia Global x2.0.',
+        cost: 10000, icon: '👨‍💼',
+        reqLevel: 100,
+        effect: 'globalMultiplier', value: 2.0
     }
 ];
 
@@ -574,14 +972,14 @@ function createIntroParticles() {
     const geometry = new THREE.BufferGeometry();
     const count = 2000;
     const posArray = new Float32Array(count * 3);
-    
-    for(let i = 0; i < count * 3; i++) {
+
+    for (let i = 0; i < count * 3; i++) {
         // Distribución en una esfera más grande que la bola principal
-        posArray[i] = (Math.random() - 0.5) * 15; 
+        posArray[i] = (Math.random() - 0.5) * 15;
     }
-    
+
     geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-    
+
     // Material que empieza invisible
     const material = new THREE.PointsMaterial({
         size: 0.05,
@@ -590,7 +988,7 @@ function createIntroParticles() {
         opacity: 0, // Empieza invisible
         blending: THREE.AdditiveBlending
     });
-    
+
     introParticlesMesh = new THREE.Points(geometry, material);
     scene.add(introParticlesMesh);
 }
@@ -614,8 +1012,8 @@ function initThree() {
     // Añadir soporte TOUCH además de CLICK
     canvas.addEventListener('touchstart', (e) => {
         // Evita que el navegador intente hacer scroll o zoom al tocar el canvas
-        e.preventDefault(); 
-        
+        e.preventDefault();
+
         // Simula el click para tu lógica de juego
         // (Cogemos el primer dedo que toca la pantalla)
         const touch = e.touches[0];
@@ -625,7 +1023,7 @@ function initThree() {
         });
         canvas.dispatchEvent(mouseEvent);
     }, { passive: false });
-    
+
 
     // OBJETO PRINCIPAL
     const geometry = new THREE.IcosahedronGeometry(1.8, 1);
@@ -649,8 +1047,14 @@ function initThree() {
 
     const renderScene = new RenderPass(scene, camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.1; bloomPass.strength = 1.2; bloomPass.radius = 0.5;
-    
+
+    // Ajustar bloom según modo seguro
+    if (safeSettings.noBloom) {
+        bloomPass.threshold = 0.3; bloomPass.strength = 0.3; bloomPass.radius = 0.1;
+    } else {
+        bloomPass.threshold = 0.1; bloomPass.strength = 1.2; bloomPass.radius = 0.5;
+    }
+
     composer = new EffectComposer(renderer);
     composer.addPass(renderScene);
     composer.addPass(bloomPass);
@@ -669,11 +1073,11 @@ function createStarfield() {
     const starGeo = new THREE.BufferGeometry();
     const count = 1000;
     const positions = new Float32Array(count * 3);
-    for(let i=0; i<count*3; i++) {
+    for (let i = 0; i < count * 3; i++) {
         positions[i] = (Math.random() - 0.5) * 60;
     }
     starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const starMat = new THREE.PointsMaterial({color: 0xffffff, size: 0.05, transparent: true, opacity: 0.8});
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, transparent: true, opacity: 0.8 });
     starMesh = new THREE.Points(starGeo, starMat);
     scene.add(starMesh);
 }
@@ -693,31 +1097,31 @@ function onCanvasClick(e) {
     const intersects = raycaster.intersectObject(mainObject);
 
     if (intersects.length > 0) {
-        
+
         // --- 🛑 INTERCEPCIÓN DEL MODO INTRO ---
         if (isIntroActive) {
             handleIntroClick(); // Avanza la historia
-            
+
             // Efecto visual sutil (solo partículas, sin sacudida fuerte)
             spawnParticles(intersects[0].point);
-            sfxClick(); 
-            
+            sfxClick();
+
             // IMPORTANTE: 'return' para que NO ejecute la lógica normal de dinero
-            return; 
+            return;
         }
         // ---------------------------------------
 
         // 4. LÓGICA DE JUEGO NORMAL
         doClickLogic(e.clientX, e.clientY);
-        
+
         // Efecto Shake (Temblor de cámara)
-        camera.position.x = (Math.random() - 0.5) * 0.2; 
+        camera.position.x = (Math.random() - 0.5) * 0.2;
         camera.position.y = (Math.random() - 0.5) * 0.2;
-        
+
         // Efecto Latido (La bola se encoge)
         mainObject.scale.setScalar(0.9);
         glowMesh.scale.setScalar(0.95);
-        
+
         setTimeout(() => {
             mainObject.scale.setScalar(1);
             glowMesh.scale.setScalar(1);
@@ -760,7 +1164,7 @@ function spawnAlien() {
     // 🛑 CORRECCIÓN CRÍTICA: Miramos 'heavenlyUpgrades', no 'upgrades' normales
     // Y usamos el ID correcto: 'alien_contact'
     if (!game.heavenlyUpgrades.includes('alien_contact')) return;
-    
+
     // Evitar duplicados
     if (document.getElementById('active-alien')) return;
     if (typeof isIntroActive !== 'undefined' && isIntroActive) return;
@@ -768,7 +1172,7 @@ function spawnAlien() {
     // Seleccionar tipo según probabilidad
     const rand = Math.random();
     let type = 'green';
-    
+
     // Solo salen los fuertes si tienes ciertas mejoras de tecnología alienígena (que crearemos luego)
     // O si tienes mucha suerte base
     if (rand > 0.95) type = 'red';
@@ -800,11 +1204,11 @@ function spawnAlien() {
     document.getElementById('game-area').appendChild(alien);
 
     // Sonido de llegada
-    if(typeof sfxAnomaly === 'function') sfxAnomaly();
+    if (typeof sfxAnomaly === 'function') sfxAnomaly();
 
     // Movimiento: El alien se mueve cada segundo
     const moveInterval = setInterval(() => {
-        if(!alien.parentNode) { clearInterval(moveInterval); return; }
+        if (!alien.parentNode) { clearInterval(moveInterval); return; }
         alien.style.left = `${Math.random() * 80 + 10}%`;
         alien.style.top = `${Math.random() * 80 + 10}%`;
     }, 1000);
@@ -812,35 +1216,35 @@ function spawnAlien() {
     alien.onclick = (e) => {
         e.stopPropagation();
         clicksLeft--;
-        
+
         // Sonido de impacto diferente al click normal
-        if(typeof playTone === 'function') playTone(200 + (clicksLeft*20), 'sawtooth', 0.05, 0.2);
-        
+        if (typeof playTone === 'function') playTone(200 + (clicksLeft * 20), 'sawtooth', 0.05, 0.2);
+
         // Efecto visual de daño
-        alien.querySelector('.alien-icon').style.transform = `scale(0.9) rotate(${Math.random()*20-10}deg)`;
+        alien.querySelector('.alien-icon').style.transform = `scale(0.9) rotate(${Math.random() * 20 - 10}deg)`;
         setTimeout(() => {
-             if(alien.parentNode) alien.querySelector('.alien-icon').style.transform = 'scale(1) rotate(0deg)'; 
+            if (alien.parentNode) alien.querySelector('.alien-icon').style.transform = 'scale(1) rotate(0deg)';
         }, 50);
-        
+
         // Actualizar barra de HP
         const fill = alien.querySelector('.alien-hp-fill');
-        if(fill) fill.style.width = `${(clicksLeft / config.clicks) * 100}%`;
+        if (fill) fill.style.width = `${(clicksLeft / config.clicks) * 100}%`;
 
         // MUERTE DEL ALIEN
         if (clicksLeft <= 0) {
             clearInterval(moveInterval);
-            
+
             // Recompensa basada en tu producción actual (CPS)
             const reward = getCPS() * config.reward * 10; // x10 para que valga la pena
             game.cookies += reward;
             game.totalCookiesEarned += reward;
-            
+
             createFloatingText(e.clientX, e.clientY, `¡AMENAZA NEUTRALIZADA! +${formatNumber(reward)}`, true);
-            
+
             // Posibilidad de soltar "Tecnología Alien" (Mejora gratis o descuento)
             if (Math.random() < 0.3) {
-                 showNotification("📦 DROP", "El alien dejó caer chatarra útil.");
-                 // Aquí podrías dar un bono extra
+                showNotification("📦 DROP", "El alien dejó caer chatarra útil.");
+                // Aquí podrías dar un bono extra
             }
 
             alien.remove();
@@ -863,11 +1267,11 @@ function spawnAlien() {
 
 
 function spawnParticles(pos) {
-    for(let i=0; i<6; i++) {
+    for (let i = 0; i < 6; i++) {
         const mesh = new THREE.Mesh(particleGeo, particleMat);
         mesh.position.copy(pos);
         mesh.userData.vel = new THREE.Vector3(
-            (Math.random()-0.5), (Math.random()-0.5), (Math.random()-0.5)+0.5
+            (Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5) + 0.5
         ).normalize().multiplyScalar(Math.random() * 0.2);
         scene.add(mesh);
         particles.push(mesh);
@@ -885,9 +1289,9 @@ function update3D() {
             introParticlesMesh.rotation.y += 0.002;
             introParticlesMesh.rotation.z += 0.001;
         }
-        updateParticles(); 
+        updateParticles();
         composer.render();
-        return; 
+        return;
     }
 
     // 🚀 2. JUEGO NORMAL - EFECTOS DINÁMICOS
@@ -901,18 +1305,18 @@ function update3D() {
         const pulseFreq = 10 + Math.sin(time) * 5;
         const pulseScale = 1 + Math.sin(time * pulseFreq) * 0.15;
         mainObject.scale.setScalar(pulseScale);
-        mainObject.material.color.setHex(0xff0000); 
+        mainObject.material.color.setHex(0xff0000);
         mainObject.material.emissive.setHex(0xff0000);
         mainObject.material.emissiveIntensity = 2.0 + Math.sin(time * 20) * 1.0;
         glowMesh.material.color.setHex(0xff3300);
         glowMesh.scale.setScalar(pulseScale * 1.1 + Math.random() * 0.05);
-        if(scene.fog) scene.fog.color.setHex(0x110000);
+        if (scene.fog) scene.fog.color.setHex(0x110000);
         camera.position.x += (Math.random() - 0.5) * 0.05;
         camera.position.y += (Math.random() - 0.5) * 0.05;
 
     } else {
         // --- MODO NORMAL / POST-BUFF (CORREGIDO) ---
-        let targetColor = new THREE.Color(0x00ff88); 
+        let targetColor = new THREE.Color(0x00ff88);
         let targetEmissive = new THREE.Color(0x004422);
         let targetGlow = new THREE.Color(0x7c4dff);
 
@@ -940,34 +1344,41 @@ function update3D() {
         mainObject.material.color.lerp(targetColor, 0.05);
         mainObject.material.emissive.lerp(targetEmissive, 0.05);
         glowMesh.material.color.lerp(targetGlow, 0.05);
-        
+
         // Suavizar escala de vuelta a la normalidad (Latido)
         const pulse = 1 + Math.sin(time * 2) * 0.03;
         mainObject.scale.lerp(new THREE.Vector3(pulse, pulse, pulse), 0.1);
-        
-        if(scene.fog) scene.fog.color.lerp(new THREE.Color(0x000000), 0.1);
+
+        if (scene.fog) scene.fog.color.lerp(new THREE.Color(0x000000), 0.1);
     } // <-- Aquí se cierra correctamente el bloque Else de Apocalipsis
-    
+
     // --- C. FONDO DE ESTRELLAS (HIPERESPACIO) ---
     if (starMesh && starMesh.geometry) {
         const positions = starMesh.geometry.attributes.position.array;
-        let starSpeed = isApocalypse ? 0.5 : 0.05 + Math.min(1.5, cps * 0.0005); 
-        
+        let starSpeed = isApocalypse ? 0.5 : 0.05 + Math.min(1.5, cps * 0.0005);
+
         // Aceleración por Buff
         if (buffMultiplier > 1 || clickBuffMultiplier > 1) starSpeed += 0.8;
 
-        for(let i=0; i < positions.length; i+=3) {
-            positions[i+2] += starSpeed;
-            if (isApocalypse) { positions[i] *= 0.98; positions[i+1] *= 0.98; }
-            if(positions[i+2] > 20) {
-                positions[i+2] = -40;
+        for (let i = 0; i < positions.length; i += 3) {
+            positions[i + 2] += starSpeed;
+            if (isApocalypse) { positions[i] *= 0.98; positions[i + 1] *= 0.98; }
+            if (positions[i + 2] > 20) {
+                positions[i + 2] = -40;
                 if (isApocalypse) {
                     positions[i] = (Math.random() - 0.5) * 60;
-                    positions[i+1] = (Math.random() - 0.5) * 60;
+                    positions[i + 1] = (Math.random() - 0.5) * 60;
                 }
             }
         }
         starMesh.geometry.attributes.position.needsUpdate = true;
+    }
+
+    // --- ANILLO ORBITAL (Evolución del núcleo) ---
+    if (orbitalRing) {
+        orbitalRing.rotation.z += 0.008;
+        orbitalRing.rotation.y += 0.003;
+        orbitalRing.material.opacity = 0.3 + Math.sin(time * 1.5) * 0.15;
     }
 
     // --- G. VIBRACIÓN POR BUFFS ---
@@ -976,7 +1387,7 @@ function update3D() {
         mainObject.position.x = (Math.random() - 0.5) * intensity;
         mainObject.position.y = (Math.random() - 0.5) * intensity;
     } else {
-        mainObject.position.lerp(new THREE.Vector3(0,0,0), 0.1); 
+        mainObject.position.lerp(new THREE.Vector3(0, 0, 0), 0.1);
     }
 
     // --- E. POST-PROCESADO (BLOOM) ---
@@ -992,7 +1403,7 @@ function update3D() {
 
     updateParticles();
     // Suavizado de cámara general
-    camera.position.lerp(new THREE.Vector3(0,0,8), 0.05);
+    camera.position.lerp(new THREE.Vector3(0, 0, 8), 0.05);
     composer.render();
 }
 
@@ -1002,14 +1413,14 @@ function updateParticles() {
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.position.add(p.userData.vel);
-        p.scale.multiplyScalar(0.92); 
-        
-        if(p.scale.x < 0.01) { 
+        p.scale.multiplyScalar(0.92);
+
+        if (p.scale.x < 0.01) {
             // Eliminar de escena y memoria
             scene.remove(p);
-            if(p.geometry) p.geometry.dispose();
-            if(p.material) p.material.dispose();
-            particles.splice(i, 1); 
+            if (p.geometry) p.geometry.dispose();
+            if (p.material) p.material.dispose();
+            particles.splice(i, 1);
         }
     }
 }
@@ -1019,7 +1430,7 @@ function onResize() {
     const canvas = document.getElementById('three-canvas');
     const w = canvas.parentElement.clientWidth;
     const h = canvas.parentElement.clientHeight;
-    camera.aspect = w/h; camera.updateProjectionMatrix();
+    camera.aspect = w / h; camera.updateProjectionMatrix();
     renderer.setSize(w, h); composer.setSize(w, h);
 }
 
@@ -1027,13 +1438,13 @@ function onResize() {
 // Función auxiliar para limpiar memoria de objetos 3D
 function dispose3D(object) {
     if (!object) return;
-    
+
     // 1. Eliminar de la escena
     if (object.parent) object.parent.remove(object);
-    
+
     // 2. Liberar geometría (memoria de vértices)
     if (object.geometry) object.geometry.dispose();
-    
+
     // 3. Liberar materiales (shaders y texturas)
     if (object.material) {
         if (Array.isArray(object.material)) {
@@ -1055,23 +1466,23 @@ function dispose3D(object) {
 // Variable de seguridad fuera de la función
 
 // Variable global para evitar bucles dobles (si no la tienes declarada fuera)
-let isAnomalyLoopActive = false; 
+let isAnomalyLoopActive = false;
 
 
 
 function collectAnomaly() {
     sfxBuy(); // Reutilizamos sonido de compra o uno especial
-    
+
     // Premio: 5 minutos de producción actual (por ejemplo)
-    const reward = getWps() * 300; 
+    const reward = getWps() * 300;
     game.cookies += reward;
     game.anomaliesClicked = (game.anomaliesClicked || 0) + 1;
 
     showNotification("👾 ANOMALÍA ESTABILIZADA", `+${formatNumber(reward)} Energía detectada`);
-    
+
     // Efecto visual de partículas en la posición del ratón
-    createFloatingText(window.innerWidth/2, window.innerHeight/2, "¡ESTABLE!", true);
-    
+    createFloatingText(window.innerWidth / 2, window.innerHeight / 2, "¡ESTABLE!", true);
+
     updateUI();
 }
 
@@ -1095,19 +1506,19 @@ function spawnAnomaly() {
     }
 
     // 3. Lógica de selección de tipo
-    const types = ['money', 'money', 'production', 'production', 'production', 'click', 'click']; 
+    const types = ['money', 'money', 'production', 'production', 'production', 'click', 'click'];
     const type = types[Math.floor(Math.random() * types.length)];
     const isCorrupt = isApocalypse && Math.random() < 0.3;
-    
+
     // 4. Crear el Orbe
     const orb = document.createElement('div');
     let icon = '⚛️'; let color = 'gold';
-    
+
     if (isCorrupt) { icon = '👁️'; color = '#ff0000'; }
     else if (type === 'production') { icon = '⚡'; color = '#ffaa00'; }
     else if (type === 'click') { icon = '🖱️'; color = '#00ff88'; }
 
-    orb.className = 'anomaly-object'; 
+    orb.className = 'anomaly-object';
     orb.innerHTML = icon;
     orb.style.cssText = `
         position: absolute; font-size: 3.5rem; cursor: pointer; z-index: 2000; 
@@ -1117,35 +1528,35 @@ function spawnAnomaly() {
     `;
 
     // --- CLICK EN LA ANOMALÍA ---
-    orb.onclick = function(e) {
-        e.stopPropagation(); 
+    orb.onclick = function (e) {
+        e.stopPropagation();
         sfxAnomaly();
-        
+
         if (type === 'money' || isCorrupt) {
             // Lógica de dinero normal o corrupto (se mantiene igual)
             let gain = getCPS() * 1200;
             game.cookies += gain;
             showAnomalyPopup(`+${formatNumber(gain)} Watts`);
-        } 
+        }
         else if (type === 'production') {
             // X7 DURANTE 10 SEGUNDOS
             activateBuff('production', 7, 10);
             showAnomalyPopup(`⚡ SOBRECARGA: x7 (10s)`);
-        } 
+        }
         else if (type === 'click') {
             // X777 DURANTE 7 SEGUNDOS
             activateBuff('click', 777, 7);
             showAnomalyPopup(`🖱️ CLICKSTORM: x777 (7s)`);
         }
 
-        this.remove(); 
+        this.remove();
         updateUI();
     };
 
     document.getElementById('game-area').appendChild(orb);
-    
+
     // Desaparecer si no se clica en 15 segundos
-    setTimeout(() => { if(orb.parentNode) orb.remove(); }, 15000);
+    setTimeout(() => { if (orb.parentNode) orb.remove(); }, 15000);
 
     // 5. PROGRAMAR SIGUIENTE APARICIÓN: EXACTAMENTE 60 SEGUNDOS
     // Usamos la variable global para que no se dupliquen hilos
@@ -1171,7 +1582,7 @@ function showAnomalyPopup(text, type = 'good') {
     // Añadimos clases para diferenciar si es bueno (dorado/azul) o malo (rojo)
     div.className = `anomaly-popup ${type}`;
     div.innerHTML = text; // Permite HTML (iconos)
-    
+
     container.appendChild(div);
 
     // 3. Limpieza de memoria
@@ -1202,23 +1613,23 @@ function activateBuff(type, amount, seconds) {
         clickBuffMultiplier = amount;
         document.body.classList.add('buff-active-click');
     }
-    
+
     // Efecto de impacto en la bola
-    if(mainObject) mainObject.scale.setScalar(2.5);
+    if (mainObject) mainObject.scale.setScalar(2.5);
 
     buffTimeout = setTimeout(() => {
         // RESET TOTAL
         buffMultiplier = 1;
         clickBuffMultiplier = 1;
         buffEndTime = 0;
-        
+
         // Quitar clases visuales
         document.body.classList.remove('buff-active-prod', 'buff-active-click');
         const gameArea = document.getElementById('game-area');
-        if(gameArea) gameArea.style.boxShadow = "none";
-        
+        if (gameArea) gameArea.style.boxShadow = "none";
+
         // Forzar a la bola a volver al centro
-        if(mainObject) mainObject.position.set(0,0,0);
+        if (mainObject) mainObject.position.set(0, 0, 0);
 
         updateUI();
         buffTimeout = null;
@@ -1240,7 +1651,7 @@ function getClickPower() {
     // --- MEJORA: Sinergia Sincrotrón (Ahora se suma a la base) ---
     if (game.upgrades.includes('factory-click-synergy')) {
         const factoryCount = game.buildings['factory'] || 0;
-        baseFlatPower += (factoryCount * 5); 
+        baseFlatPower += (factoryCount * 5);
         // Al sumarlo aquí, luego se multiplicará por el Prestigio y los Ayudantes.
         // ¡Mucho más potente!
     }
@@ -1249,25 +1660,25 @@ function getClickPower() {
     let power = baseFlatPower * game.prestigeMult;
 
     // 3. ARTEFACTO: PERLA AZUL (x50)
-    if (game.activePearl === 'blue') power *= 50; 
+    if (game.activePearl === 'blue') power *= 50;
 
     // 4. AYUDANTE: Dra. Aris Thorne (Multiplicador de Click)
     const clickHelper = helpersConfig.find(h => h.effect === 'clickPower');
     if (clickHelper && game.helpers.includes(clickHelper.id)) {
         power *= clickHelper.value;
     }
-    
+
     // 5. ÁRBOL COSMOS (ASCENSIÓN) - Porcentaje de WPS al Click
     // (Esto está perfecto donde está, sumándose al final)
     let wpsToClick = 0;
 
     if (game.heavenlyUpgrades.includes('click_god')) {
-        wpsToClick = 0.05; 
+        wpsToClick = 0.05;
     }
     else if (game.heavenlyUpgrades.includes('click_transistor')) {
-        wpsToClick = 0.01; 
+        wpsToClick = 0.01;
     }
-    
+
     if (wpsToClick > 0) {
         power += (getCPS() * wpsToClick);
     }
@@ -1280,10 +1691,10 @@ function getClickPower() {
 
 function getMaxCombo() {
     let max = 5.0; // Base inicial
-    
+
     // Mejora de la Dra. Elena Flux
     if (game.heavenlyUpgrades.includes('elena_flux_mastery')) max = 10.0;
-    
+
     // Mejoras adicionales de expansión (+5.0 cada una)
     if (game.heavenlyUpgrades.includes('combo_expand_1')) max += 5.0;
     if (game.heavenlyUpgrades.includes('combo_expand_2')) max += 5.0;
@@ -1299,12 +1710,12 @@ function getCPS() {
     // 1. CÁLCULO BASE DE EDIFICIOS
     buildingsConfig.forEach(u => {
         if (u.type === 'auto') {
-            let count = game.buildings[u.id] || 0; 
+            let count = game.buildings[u.id] || 0;
             let bPower = count * u.currentPower;
-            
+
             // Sinergia: Red Neuronal
-            if (u.id === 'mine' && game.upgrades?.includes('grandma-mine-synergy')) { 
-                const grandmaCount = game.buildings['grandma'] || 0; 
+            if (u.id === 'mine' && game.upgrades?.includes('grandma-mine-synergy')) {
+                const grandmaCount = game.buildings['grandma'] || 0;
                 bPower *= (1 + (grandmaCount * 0.01));
             }
             cps += bPower;
@@ -1313,7 +1724,7 @@ function getCPS() {
 
     // 2. MULTIPLICADORES GLOBALES (PRESTIGIO)
     let total = cps * game.prestigeMult;
-    
+
     // 3. AYUDANTES Y ÉLITE
     const prodHelper = helpersConfig.find(h => h.effect === 'cpsMultiplier');
     if (prodHelper && game.helpers.includes(prodHelper.id)) total *= prodHelper.value;
@@ -1326,7 +1737,7 @@ function getCPS() {
 
     // Mejoras de Sincronía y Protocolo Maestro
     game.helpers.forEach(helperId => {
-        if (game.upgrades.includes(`upg_power_${helperId}`)) total *= 1.25; 
+        if (game.upgrades.includes(`upg_power_${helperId}`)) total *= 1.25;
         if (game.upgrades.includes(`upg_master_${helperId}`)) {
             if (helperId === 'h_clicker') total *= 1.15;
             if (helperId === 'h_miner') total *= 1.50;
@@ -1343,13 +1754,19 @@ function getCPS() {
 
     // 5. ÁRBOL DE ASCENSIÓN (MEJORADO)
     if (game.heavenlyUpgrades.includes('perm_prod_1')) total *= 1.15;
-    
-    // Cerebro Galáctico: +2% por logro
+
+    // 6. BONUS DE LOGROS PROCEDURALES (+1% BASE)
+    if (game.achievements && game.achievements.length > 0) {
+        const baseArchBonus = 1 + (game.achievements.length * 0.01);
+        total *= baseArchBonus;
+    }
+
+    // Cerebro Galáctico: +2% por logro (ADICIONAL)
     if (game.heavenlyUpgrades.includes('galaxy_brain')) {
         const achievementBonus = 1 + (game.achievements.length * 0.02);
         total *= achievementBonus;
     }
-    
+
     // Sinergia Estructural
     if (game.heavenlyUpgrades.includes('synergy_passive')) {
         const totalBuildings = Object.values(game.buildings).reduce((a, b) => a + b, 0);
@@ -1366,17 +1783,17 @@ function getCPS() {
     if (game.heavenlyUpgrades.includes('multiverse')) total *= 2.0;
 
     // 6. MULTIPLICADORES TEMPORALES
-    if (isOvercharged) total *= 5; 
-    if (game.activePearl === 'red') total *= 10; 
-        // Añade esto al final de getCPS antes del return
+    if (isOvercharged) total *= 5;
+    if (game.activePearl === 'red') total *= 10;
+    // Añade esto al final de getCPS antes del return
     if (game.buildings.andromeda_dyson > 0) {
         total *= Math.pow(1.1, game.buildings.andromeda_dyson);
     }
     if (game.buildings.andromeda_bazar > 0) {
         total *= (1 + (game.buildings.andromeda_bazar * 0.05));
     }
-    
-    return total * buffMultiplier; 
+
+    return total * buffMultiplier;
 }
 
 
@@ -1401,24 +1818,23 @@ function getHelpersCost() {
     if (efficiencyHelper && game.helpers.includes(efficiencyHelper.id)) {
         totalCost *= efficiencyHelper.value; // Multiplica por 0.6 (descuento del 40%)
     }
-    
+
     return totalCost;
 }
 
 function getCost(id) {
     const item = buildingsConfig.find(u => u.id === id);
     const currentAmount = game.buildings[id] || 0;
-    
+
     // Calculamos el coste base
     let cost = Math.floor(item.baseCost * Math.pow(1.15, currentAmount));
-    
+
     // Aplicar descuento de perla verde
     if (game.activePearl === 'green') cost *= 0.5;
 
     // MEJORA: Arquitectura Cuántica (-5% coste)
     if (game.heavenlyUpgrades.includes('cheaper_builds')) cost *= 0.95;
-    
-    if (game.activePearl === 'green') cost *= 0.5;
+
     return cost;
 }
 
@@ -1427,8 +1843,137 @@ function recalculateStats() {
     game.upgrades.forEach(uid => {
         const [bid] = uid.split('-');
         const b = buildingsConfig.find(i => i.id === bid);
-        if(b) b.currentPower *= 2;
+        if (b) b.currentPower *= 2;
     });
+    updateCoreAppearance();
+}
+
+// ==========================================
+// EVOLUCIÓN VISUAL DEL NÚCLEO 3D
+// ==========================================
+let currentCoreTier = -1;
+let orbitalRing = null;
+
+// Tiers basados en edificios desbloqueados (de menor a mayor)
+const coreTiers = [
+    { // Tier 0: Inicio — Icosaedro básico
+        check: () => true,
+        geometry: () => new THREE.IcosahedronGeometry(1.8, 1),
+        wireGeo: () => new THREE.IcosahedronGeometry(2.0, 1),
+        scale: 1.0, emissiveIntensity: 0.6, roughness: 0.2, metalness: 0.9,
+        ring: false
+    },
+    { // Tier 1: Panel Solar — Más detalle, ligeramente mayor
+        check: () => (game.buildings['farm'] || 0) >= 1,
+        geometry: () => new THREE.IcosahedronGeometry(1.9, 2),
+        wireGeo: () => new THREE.IcosahedronGeometry(2.1, 2),
+        scale: 1.05, emissiveIntensity: 0.8, roughness: 0.18, metalness: 0.92,
+        ring: false
+    },
+    { // Tier 2: Turbina Eólica — Dodecaedro
+        check: () => (game.buildings['mine'] || 0) >= 1,
+        geometry: () => new THREE.DodecahedronGeometry(1.9, 1),
+        wireGeo: () => new THREE.DodecahedronGeometry(2.1, 1),
+        scale: 1.1, emissiveIntensity: 1.0, roughness: 0.15, metalness: 0.93,
+        ring: false
+    },
+    { // Tier 3: Central Hidroeléctrica — Octaedro suavizado
+        check: () => (game.buildings['factory'] || 0) >= 1,
+        geometry: () => new THREE.OctahedronGeometry(2.0, 2),
+        wireGeo: () => new THREE.OctahedronGeometry(2.2, 2),
+        scale: 1.15, emissiveIntensity: 1.2, roughness: 0.12, metalness: 0.95,
+        ring: false
+    },
+    { // Tier 4: Reactor Nuclear — Icosaedro alto detalle
+        check: () => (game.buildings['bank'] || 0) >= 1,
+        geometry: () => new THREE.IcosahedronGeometry(2.0, 3),
+        wireGeo: () => new THREE.IcosahedronGeometry(2.2, 2),
+        scale: 1.2, emissiveIntensity: 1.5, roughness: 0.1, metalness: 0.96,
+        ring: false
+    },
+    { // Tier 5: Reactor de Fusión — Esfera casi perfecta
+        check: () => (game.buildings['temple'] || 0) >= 1,
+        geometry: () => new THREE.IcosahedronGeometry(2.0, 4),
+        wireGeo: () => new THREE.IcosahedronGeometry(2.3, 3),
+        scale: 1.25, emissiveIntensity: 2.0, roughness: 0.05, metalness: 0.98,
+        ring: false
+    },
+    { // Tier 6: Matriz Dyson — Esfera perfecta + anillo orbital
+        check: () => (game.buildings['portal'] || 0) >= 1,
+        geometry: () => new THREE.SphereGeometry(2.0, 32, 32),
+        wireGeo: () => new THREE.SphereGeometry(2.3, 16, 16),
+        scale: 1.3, emissiveIntensity: 2.5, roughness: 0.02, metalness: 1.0,
+        ring: true
+    },
+    { // Tier 7: Andrómeda — Esfera HD + anillo + máximo brillo
+        check: () => (game.buildings['andromeda_siphon'] || 0) >= 1,
+        geometry: () => new THREE.SphereGeometry(2.2, 48, 48),
+        wireGeo: () => new THREE.SphereGeometry(2.5, 24, 24),
+        scale: 1.4, emissiveIntensity: 3.0, roughness: 0.01, metalness: 1.0,
+        ring: true
+    }
+];
+
+function updateCoreAppearance() {
+    if (!mainObject || !glowMesh || !scene) return;
+
+    // Determinar tier actual (el más alto que cumple la condición)
+    let newTier = 0;
+    for (let i = coreTiers.length - 1; i >= 0; i--) {
+        if (coreTiers[i].check()) { newTier = i; break; }
+    }
+
+    // Si no cambió el tier, no hacer nada (evitar rebuilds innecesarios)
+    if (newTier === currentCoreTier) return;
+
+    const tier = coreTiers[newTier];
+    const oldTier = currentCoreTier;
+    currentCoreTier = newTier;
+
+    console.log(`⚛️ Núcleo evolucionando: Tier ${oldTier} → Tier ${newTier}`);
+
+    // --- Cambiar geometría del núcleo principal ---
+    const oldGeo = mainObject.geometry;
+    mainObject.geometry = tier.geometry();
+    oldGeo.dispose();
+
+    // --- Cambiar geometría del wireframe/glow ---
+    const oldWireGeo = glowMesh.geometry;
+    glowMesh.geometry = tier.wireGeo();
+    oldWireGeo.dispose();
+
+    // --- Propiedades del material ---
+    mainObject.material.roughness = tier.roughness;
+    mainObject.material.metalness = tier.metalness;
+    mainObject.material.emissiveIntensity = tier.emissiveIntensity;
+
+    // --- Anillo orbital ---
+    if (tier.ring && !orbitalRing) {
+        const ringGeo = new THREE.TorusGeometry(3.2, 0.06, 16, 100);
+        const ringMat = new THREE.MeshBasicMaterial({
+            color: 0x7c4dff, transparent: true, opacity: 0.4
+        });
+        orbitalRing = new THREE.Mesh(ringGeo, ringMat);
+        orbitalRing.rotation.x = Math.PI / 3;
+        scene.add(orbitalRing);
+    } else if (!tier.ring && orbitalRing) {
+        scene.remove(orbitalRing);
+        orbitalRing.geometry.dispose();
+        orbitalRing.material.dispose();
+        orbitalRing = null;
+    }
+
+    // Notificar al jugador (solo después del tier 0 = inicio)
+    if (oldTier >= 0 && newTier > oldTier) {
+        const tierNames = [
+            'Generador Básico', 'Condensador Solar', 'Dinamo Eólica',
+            'Núcleo Hidrodinámico', 'Reactor Atómico', 'Estrella de Fusión',
+            'Esfera Dyson', 'Singularidad de Andrómeda'
+        ];
+        if (typeof showNotification === 'function') {
+            showNotification('⚛️ NÚCLEO EVOLUCIONADO', `Forma: ${tierNames[newTier]}`);
+        }
+    }
 }
 
 // ==========================================
@@ -1446,26 +1991,26 @@ const omegaWarnings = {
 };
 
 // 2. Función para comprar estructuras
-window.buyBuilding = function(id) {
-    const cost = getCost(id); 
-    
+window.buyBuilding = function (id) {
+    const cost = getCost(id);
+
     if (game.cookies >= cost) {
-        sfxBuy(); 
+        sfxBuy();
         game.cookies -= cost;
-        
+
         if (!game.buildings[id]) game.buildings[id] = 0;
         game.buildings[id]++;
-        
+
         // Actualizar todo el sistema
         recalculateStats();
-        renderStore(); 
-        renderHelpers(); 
+        renderStore();
+        renderHelpers();
         updateUI();
     }
 };
 
 // 3. LA PIEZA QUE TE FALTABA: Función principal de mejoras
-window.buyUpgrade = function(upgradeId, cost) {
+window.buyUpgrade = function (upgradeId, cost) {
     if (game.cookies < cost) {
         return;
     }
@@ -1473,8 +2018,8 @@ window.buyUpgrade = function(upgradeId, cost) {
     // Si la mejora es "Omega", pedimos confirmación con el mensaje del diccionario
     if (omegaWarnings[upgradeId]) {
         showSystemModal(
-            "ADVERTENCIA DE SEGURIDAD", 
-            omegaWarnings[upgradeId], 
+            "ADVERTENCIA DE SEGURIDAD",
+            omegaWarnings[upgradeId],
             true, // isConfirm: activa el botón Cancelar
             () => executeUpgradePurchase(upgradeId, cost) // Si acepta, ejecuta
         );
@@ -1495,25 +2040,25 @@ function executeUpgradePurchase(upgradeId, cost) {
     // --- NUEVA LÓGICA DE ANIMACIÓN PROGRESIVA ---
     if (upgradeId === 'omega-final') {
         // La gran escena final que ya tenemos
-        triggerOmegaFinalAnimation(); 
-    } 
+        triggerOmegaFinalAnimation();
+    }
     else if (upgradeId.includes('omega') || upgradeId === 'protocol-omega') {
         // Para las fases 1, 2, 3 y 4 disparar el micro-glitch
         triggerOmegaMinorGlitch();
-        
+
         // Además, forzamos un recalcular para que el 3D 
         // empiece a vibrar permanentemente (gracias a lo que añadimos en update3D)
         recalculateStats();
         renderStore();
         updateUI();
-    } 
+    }
     else {
         // Comportamiento normal para otras mejoras
         recalculateStats();
         renderStore();
         updateUI();
     }
-    
+
     saveGame();
 }
 
@@ -1525,8 +2070,8 @@ function checkGreenPearlMission() {
 
     // 2. Identificamos cuáles son los últimos 4 ayudantes de la lista
     // (Usamos .slice(-4) para coger los 4 del final del array de configuración)
-    const last4Helpers = helpersConfig.slice(-4); 
-    
+    const last4Helpers = helpersConfig.slice(-4);
+
     // 3. Comprobamos si tienes los 4 ACTIVOS (equipados) al mismo tiempo
     // .every() devuelve true solo si TODOS cumplen la condición
     const allEquipped = last4Helpers.every(helper => game.helpers.includes(helper.id));
@@ -1534,10 +2079,10 @@ function checkGreenPearlMission() {
     // 4. Si están los 4 puestos... ¡PREMIO!
     if (allEquipped) {
         unlockPearl('green');
-        
+
         showSystemModal(
-            "🟢 ECOSISTEMA PERFECTO", 
-            "Has logrado estabilizar a los 4 entes más poderosos de la corporación al mismo tiempo.\n\nLa vida fluye a través de la estructura.\nHas obtenido la PERLA DE LA VIDA.", 
+            "🟢 ECOSISTEMA PERFECTO",
+            "Has logrado estabilizar a los 4 entes más poderosos de la corporación al mismo tiempo.\n\nLa vida fluye a través de la estructura.\nHas obtenido la PERLA DE LA VIDA.",
             false, null
         );
     }
@@ -1547,17 +2092,17 @@ function checkGreenPearlMission() {
 
 
 
-window.toggleHelper = function(helperId) {
+window.toggleHelper = function (helperId) {
     const helper = helpersConfig.find(h => h.id === helperId);
     if (!helper) return;
-    
+
     // Calcular nivel actual del jugador
     const playerLevel = Math.floor(Math.cbrt(game.totalCookiesEarned));
-    
+
     if (playerLevel < helper.reqLevel) return;
 
     const isActive = game.helpers.includes(helperId);
-    
+
     if (isActive) {
         // --- DESACTIVAR ---
         // Usamos filter para quitarlo de la lista
@@ -1565,12 +2110,12 @@ window.toggleHelper = function(helperId) {
         showNotification("❌ Ayudante Despedido", `${helper.name} ha vuelto a su planeta.`);
     } else {
         // --- ACTIVAR ---
-        
+
         // 1. ¿Hay hueco?
         if (game.helpers.length >= MAX_HELPERS) {
             showSystemModal(
-                "NAVE LLENA", 
-                `Solo tienes ${MAX_HELPERS} asientos disponibles.\nDebes despedir a alguien antes.`, 
+                "NAVE LLENA",
+                `Solo tienes ${MAX_HELPERS} asientos disponibles.\nDebes despedir a alguien antes.`,
                 false
             );
             return;
@@ -1579,8 +2124,8 @@ window.toggleHelper = function(helperId) {
         // 2. ¿Puedes pagar su sueldo?
         // (Asumimos que los ayudantes restan CPS o requieren un flujo positivo)
         const currentCPS = getCPS();
-        const currentHelperCost = getHelpersCost(); 
-        
+        const currentHelperCost = getHelpersCost();
+
         if (currentCPS - currentHelperCost < helper.cost) {
             showSystemModal(
                 "SIN FONDOS",
@@ -1589,22 +2134,22 @@ window.toggleHelper = function(helperId) {
             );
             return;
         }
-        
+
         // ¡Contratado!
         game.helpers.push(helperId);
-        
+
         // --- AQUÍ COMPROBAMOS LA MISIÓN DE LA PERLA VERDE ---
         checkGreenPearlMission(); // <--- IMPORTANTE: Chequear si ya tienes los 4 últimos
         // ----------------------------------------------------
 
-        sfxPrestige(); 
+        sfxPrestige();
         showNotification("✅ Ayudante Equipado", `${helper.name} se ha unido al equipo.`);
     }
-    
+
     // --- FINALIZAR ---
     renderHelpers();
     updateUI();
-    
+
     // --- IMPORTANTE: RECALCULAR ESTADÍSTICAS ---
     // Si no pones esto, el CPS no cambiará hasta que compres un edificio o hagas click.
     recalculateStats(); // <--- IMPRESCINDIBLE
@@ -1615,34 +2160,39 @@ window.toggleHelper = function(helperId) {
 
 function epicBluePearlScene() {
     console.log("Escena épica de la Perla Azul activada");
-    
+
     // 1. Bloqueo y Estética
-    isIntroActive = true; // Usamos tu variable global para bloquear clicks
-    document.body.classList.add('blue-glitch');
-    
-    // Sonido inicial: Impacto temporal
-    playTone(1200, 'sine', 0.5, 0.2);
-    setTimeout(() => playTone(1800, 'sine', 0.5, 0.2), 200);
-    
-    // 2. Explosión masiva de partículas (Tu código mejorado)
-    for(let i=0; i<300; i++) { // Aumentamos a 300
+    isIntroActive = true;
+    if (!safeSettings.noGlitch) document.body.classList.add('blue-glitch');
+
+    // Sonido inicial
+    if (!safeSettings.noShake) {
+        playTone(1200, 'sine', 0.5, 0.2);
+        setTimeout(() => playTone(1800, 'sine', 0.5, 0.2), 200);
+    } else {
+        playTone(800, 'sine', 0.3, 0.1);
+    }
+
+    // 2. Partículas (reducidas en modo seguro)
+    const particleCount = safeSettings.noParticles ? 30 : 300;
+    for (let i = 0; i < particleCount; i++) {
         const mesh = new THREE.Mesh(
             particleGeo,
             new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true })
         );
         mesh.position.copy(mainObject.position);
         mesh.userData.vel = new THREE.Vector3(
-            (Math.random()-0.5)*2,
-            (Math.random()-0.5)*2,
-            (Math.random()-0.5)*2
-        ).normalize().multiplyScalar(Math.random()*0.8 + 0.3); // Más rápidas
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2
+        ).normalize().multiplyScalar(Math.random() * 0.8 + 0.3);
         scene.add(mesh);
         particles.push(mesh);
     }
 
-    // 3. BUCLE DE ANIMACIÓN (Los 5 segundos de locura)
+    // 3. BUCLE DE ANIMACIÓN
     const startTime = Date.now();
-    const duration = 5000;
+    const duration = safeSettings.noShake ? 2000 : 5000;
 
     const blueInterval = setInterval(() => {
         const elapsed = Date.now() - startTime;
@@ -1650,30 +2200,34 @@ function epicBluePearlScene() {
 
         if (progress >= 1) {
             clearInterval(blueInterval);
-            finishBlueScene(); // Limpieza final
+            finishBlueScene();
             return;
         }
 
         // --- DISTORSIÓN THREE.JS ---
         if (mainObject && glowMesh) {
-            // El núcleo vibra y crece
-            const pulse = 1 + Math.sin(Date.now() * 0.05) * (0.2 * progress);
-            mainObject.scale.setScalar(pulse);
-            
-            // Colores cian eléctricos
-            mainObject.material.color.lerp(new THREE.Color(0x00e5ff), 0.1);
-            mainObject.material.emissive.lerp(new THREE.Color(0x003366), 0.1);
-            
-            // La malla gira como un ventilador descontrolado
-            glowMesh.rotation.y += 0.5 * progress;
-            glowMesh.rotation.z += 0.2;
-            glowMesh.scale.setScalar(pulse * 1.4);
+            if (safeSettings.noShake) {
+                // Modo seguro: escala suave sin vibración
+                mainObject.scale.setScalar(1 + progress * 0.3);
+                mainObject.material.color.lerp(new THREE.Color(0x00e5ff), 0.05);
+                glowMesh.scale.setScalar(1.2 + progress * 0.5);
+            } else {
+                const pulse = 1 + Math.sin(Date.now() * 0.05) * (0.2 * progress);
+                mainObject.scale.setScalar(pulse);
+                mainObject.material.color.lerp(new THREE.Color(0x00e5ff), 0.1);
+                mainObject.material.emissive.lerp(new THREE.Color(0x003366), 0.1);
+                glowMesh.rotation.y += 0.5 * progress;
+                glowMesh.rotation.z += 0.2;
+                glowMesh.scale.setScalar(pulse * 1.4);
+            }
         }
 
-        // --- CÁMARA (Efecto Vértigo) ---
-        camera.position.z = 8 - (Math.sin(progress * Math.PI) * 3); // Se acerca y aleja
-        camera.fov = 50 + (progress * 30); // Deformación de lente
-        camera.updateProjectionMatrix();
+        // --- CÁMARA (solo modo normal) ---
+        if (!safeSettings.noShake) {
+            camera.position.z = 8 - (Math.sin(progress * Math.PI) * 3);
+            camera.fov = 50 + (progress * 30);
+            camera.updateProjectionMatrix();
+        }
 
     }, 1000 / 60);
 }
@@ -1688,7 +2242,7 @@ function finishBlueScene() {
     // 2. Restaurar todo
     document.body.classList.remove('blue-glitch');
     isIntroActive = false;
-    camera.position.set(0,0,8);
+    camera.position.set(0, 0, 8);
     camera.fov = 50;
     camera.updateProjectionMatrix();
 
@@ -1697,13 +2251,13 @@ function finishBlueScene() {
         mainObject.material.emissive.setHex(0x004422);
         mainObject.scale.setScalar(1);
     }
-    
+
     // 3. Mensaje final y limpieza
     setTimeout(() => {
         flash.remove();
         showSystemModal(
-            "🔵 SINGULARIDAD TEMPORAL", 
-            "Has alcanzado el límite de la persistencia cinética.\nEl tiempo se ha condensado en una Perla Azul.", 
+            "🔵 SINGULARIDAD TEMPORAL",
+            "Has alcanzado el límite de la persistencia cinética.\nEl tiempo se ha condensado en una Perla Azul.",
             false, null
         );
     }, 1000);
@@ -1731,7 +2285,7 @@ function startAlienLoop() {
 
     // 4. Calculamos el tiempo aleatorio para ESTA aparición
     const randomDelay = Math.floor(Math.random() * (maxTime - minTime + 1) + minTime);
-    
+
     // console.log(`👽 Próximo alien en: ${Math.round(randomDelay/1000)}s`); 
 
     // 5. Programamos la aparición
@@ -1740,7 +2294,7 @@ function startAlienLoop() {
         if (game.heavenlyUpgrades.includes('alien_contact')) {
             spawnAlien();
         }
-        
+
         // Reiniciamos el ciclo para el siguiente alien
         startAlienLoop();
     }, randomDelay);
@@ -1753,14 +2307,14 @@ function onObjectClick() {
     // --- 1. CONTAR EL CLICK ---
     game.totalClicks++;
     if (game.totalClicks >= 10000 && !game.pearls.includes('blue')) {
-    unlockPearl('blue');
-    showSystemModal(
-        "🔵 HITO ALCANZADO",
-        "10,000 Clicks. La persistencia ha fracturado el tiempo. ¡Has desbloqueado la Perla del Cronos (Clicks x50)!",
-        false,
-        null
-    );
-    epicBluePearlScene(); // <-- Llama aquí a la escena épica
+        unlockPearl('blue');
+        showSystemModal(
+            "🔵 HITO ALCANZADO",
+            "10,000 Clicks. La persistencia ha fracturado el tiempo. ¡Has desbloqueado la Perla del Cronos (Clicks x50)!",
+            false,
+            null
+        );
+        epicBluePearlScene(); // <-- Llama aquí a la escena épica
     }
 }
 
@@ -1771,19 +2325,19 @@ function startStaffMessages() {
     setInterval(() => {
         // 1. Filtrar solo los ayudantes que el jugador ya ha comprado
         const activeHelpers = helpersConfig.filter(h => game.helpers.includes(h.id));
-        
+
         if (activeHelpers.length > 0) {
             // 2. Elegir uno al azar
             const randomHelper = activeHelpers[Math.floor(Math.random() * activeHelpers.length)];
-            
+
             // 3. Elegir una de sus dos frases al azar
             const randomQuote = randomHelper.quotes[Math.floor(Math.random() * randomHelper.quotes.length)];
-            
+
             // 4. Mostrarlo en la interfaz con un efecto de escritura o fade
             const feedEl = document.getElementById('staff-feed');
             if (feedEl) {
                 feedEl.style.opacity = 0; // Efecto fade out
-                
+
                 setTimeout(() => {
                     feedEl.innerHTML = `<strong>${randomHelper.name}:</strong> "${randomQuote}"`;
                     feedEl.style.opacity = 1; // Efecto fade in
@@ -1802,7 +2356,7 @@ startStaffMessages();
 function renderHelpers() {
     const container = document.getElementById('helpers-list');
     if (!container) return;
-    
+
     container.innerHTML = '';
 
     // CABECERA
@@ -1816,31 +2370,31 @@ function renderHelpers() {
         </span>
     `;
     container.appendChild(header);
-    
+
     const currentCPS = getCPS();
     const currentHelperCost = getHelpersCost();
-    const playerLevel = Math.floor(Math.cbrt(game.totalCookiesEarned)); 
-    
+    const playerLevel = Math.floor(Math.cbrt(game.totalCookiesEarned));
+
     helpersConfig.forEach(helper => {
         const isActive = game.helpers.includes(helper.id);
         const isLocked = playerLevel < helper.reqLevel;
-        
+
         const div = document.createElement('div');
         let classes = `helper-item ${isActive ? 'active' : ''}`;
-        
+
         if (isLocked) classes += ' locked';
         else if (!isActive && (game.helpers.length >= MAX_HELPERS || currentCPS - currentHelperCost < helper.cost)) {
             classes += ' disabled';
         }
-        
+
         div.className = classes;
 
         // --- CORRECCIÓN DEL CLICK ---
         if (!isLocked) {
             // Usamos onmousedown para que la respuesta sea INMEDIATA al pulsar, no al soltar
-            div.onmousedown = function(e) { 
+            div.onmousedown = function (e) {
                 e.preventDefault(); // Evita selecciones de texto raras
-                toggleHelper(helper.id); 
+                toggleHelper(helper.id);
             };
         }
 
@@ -1874,7 +2428,7 @@ function renderHelpers() {
                 ${btnContent}
             </div>
         `;
-        
+
         container.appendChild(div);
     });
 }
@@ -1887,7 +2441,7 @@ let lastTime = Date.now();
 
 function gameLoop() {
     requestAnimationFrame(gameLoop);
-    
+
     const now = Date.now();
     // Si por algún motivo lastTime falla, usamos 'now' para evitar que dt sea NaN
     const dt = (now - (lastTime || now)) / 1000;
@@ -1905,16 +2459,16 @@ function gameLoop() {
     // Si no tienes la función getMaxCombo aún, usamos 5.0 por defecto
     const maxComboLimit = typeof getMaxCombo === 'function' ? getMaxCombo() : 5.0;
     const comboEl = document.getElementById('combo-display');
-    
+
     if (typeof comboTimer !== 'undefined' && comboTimer > 0) {
         comboTimer -= dt;
     } else if (typeof comboMultiplier !== 'undefined' && comboMultiplier > 1.0) {
-         comboMultiplier -= dt * 2; 
+        comboMultiplier -= dt * 2;
         if (comboMultiplier < 1.0) comboMultiplier = 1.0;
-        
-        if(comboEl) {
+
+        if (comboEl) {
             comboEl.innerText = `COMBO x${comboMultiplier.toFixed(2)}`;
-            if(comboMultiplier <= 1.0) comboEl.style.opacity = 0;
+            if (comboMultiplier <= 1.0) comboEl.style.opacity = 0;
             else comboEl.style.opacity = 1;
         }
     }
@@ -1929,7 +2483,7 @@ function gameLoop() {
             const remaining = buffEndTime - now;
             const percentage = Math.max(0, (remaining / (buffDuration || 10000)) * 100);
             barFill.style.width = percentage + "%";
-            
+
             // Color según el buff activo
             const color = (typeof clickBuffMultiplier !== 'undefined' && clickBuffMultiplier > 1) ? '#00e5ff' : '#ffaa00';
             barFill.style.backgroundColor = color;
@@ -1942,10 +2496,10 @@ function gameLoop() {
     // Es vital que estas funciones existan para que no se quede en negro
     if (typeof update3D === 'function') update3D();
     if (typeof updateUI === 'function') updateUI();
-    
+
     // --- 5. OPTIMIZACIONES (CADA 1 SEGUNDO aprox) ---
     // Usamos el residuo de 'now' para ejecutar tareas pesadas solo a veces
-    if (Math.floor(now / 200) % 5 === 0) { 
+    if (Math.floor(now / 200) % 5 === 0) {
         if (typeof checkAvailability === 'function') checkAvailability();
         if (typeof checkUnlocks === 'function') checkUnlocks();
         if (typeof checkAchievements === 'function') checkAchievements();
@@ -1963,9 +2517,9 @@ function spawnMerchant() {
     const ship = document.createElement('div');
     ship.innerHTML = '🛸';
     ship.className = 'merchant-ship';
-    
+
     // Posición aleatoria en el eje Y para que no salga siempre en el mismo sitio
-    const randomTop = Math.random() * 60 + 10; 
+    const randomTop = Math.random() * 60 + 10;
 
     ship.style.cssText = `
         position: absolute; 
@@ -1978,39 +2532,39 @@ function spawnMerchant() {
         filter: drop-shadow(0 0 20px #b388ff);
         user-select: none;
     `;
-    
+
     const gameArea = document.getElementById('game-area');
     if (!gameArea) return;
     gameArea.appendChild(ship);
-    
+
     // Sonido de aviso (si lo tienes implementado) o notificación discreta
     console.log("🛸 Un comerciante de Andrómeda ha entrado en el sector.");
-    if (typeof sfxAnomaly === 'function') sfxAnomaly(); 
-    
+    if (typeof sfxAnomaly === 'function') sfxAnomaly();
+
     // Iniciamos el movimiento
-    setTimeout(() => { 
-        ship.style.left = '110%'; 
+    setTimeout(() => {
+        ship.style.left = '110%';
     }, 100);
-    
+
     // CLICK EN LA NAVE
     ship.onclick = (e) => {
         e.stopPropagation(); // Evita clics accidentales en el fondo
-        
+
         // Efecto visual al capturarla
         createFloatingText(e.clientX, e.clientY, "¡CONTACTO ESTABLECIDO!");
-        
+
         if (typeof openMerchantMenu === 'function') {
-            openMerchantMenu(); 
+            openMerchantMenu();
         } else {
             console.error("Error: openMerchantMenu no está definida.");
         }
-        
+
         ship.remove();
     };
-    
+
     // Auto-destrucción si sale de la pantalla
-    setTimeout(() => { 
-        if(ship.parentNode) ship.remove(); 
+    setTimeout(() => {
+        if (ship.parentNode) ship.remove();
     }, 21000);
 }
 
@@ -2018,11 +2572,11 @@ function openMerchantMenu() {
     // 1. Seleccionar una estructura de Andrómeda al azar
     const availableBuildings = buildingsConfig.filter(b => b.isAndromeda);
     const offer = availableBuildings[Math.floor(Math.random() * availableBuildings.length)];
-    
+
     // Precio inicial (Precio base con el escalado de cuántos tienes)
     const currentCount = game.buildings[offer.id] || 0;
     let currentPrice = Math.floor(offer.baseCost * Math.pow(1.15, currentCount));
-    
+
     // Crear el contenedor del menú
     const overlay = document.createElement('div');
     overlay.id = 'merchant-overlay';
@@ -2093,7 +2647,7 @@ function openMerchantMenu() {
         haggleCount++;
         const msg = document.getElementById('merchant-msg');
         const priceDisplay = document.getElementById('merchant-price-display');
-        
+
         // Probabilidad de éxito (50% el primer intento, 25% el segundo...)
         const successChance = 0.5 / haggleCount;
 
@@ -2131,8 +2685,8 @@ function buyAndromedaBuilding(id, price) {
 
 function startMerchantLoop() {
     // Intentar aparecer cada 5-10 minutos
-    const waitTime = 300000 + (Math.random() * 300000); 
-    
+    const waitTime = 300000 + (Math.random() * 300000);
+
     setTimeout(() => {
         if (game.heavenlyUpgrades.includes('andromeda_trade')) {
             spawnMerchant();
@@ -2157,7 +2711,7 @@ function updateUI() {
     // 1. Actualización básica de energía (Watts)
     const currentCookies = Math.floor(game.cookies);
     scoreEl.innerText = formatNumber(currentCookies);
-    
+
     // Título de la pestaña
     if (document.title !== `${formatNumber(currentCookies)} - Quantum Grid`) {
         document.title = `${formatNumber(currentCookies)} - Quantum Grid`;
@@ -2167,7 +2721,7 @@ function updateUI() {
     const grossCPS = getCPS();
     const helperCost = getHelpersCost();
     const netCPS = getNetCPS();
-    
+
     if (helperCost > 0) {
         const newCpsHTML = `${formatNumber(netCPS)} / s <span style="font-size: 0.75rem; color: #999; margin-left: 5px;">(Gen: ${formatNumber(grossCPS)} - Uso: ${formatNumber(helperCost)})</span>`;
         if (cpsEl.innerHTML !== newCpsHTML) {
@@ -2190,18 +2744,18 @@ function updateUI() {
     // 4. Lógica del Botón de Ascensión
     const pBtn = document.getElementById('btn-prestige');
     const PRESTIGE_BASE = 1000000;
-    
-    if(game.totalCookiesEarned >= PRESTIGE_BASE) {
+
+    if (game.totalCookiesEarned >= PRESTIGE_BASE) {
         if (pBtn) {
             pBtn.style.display = 'block';
-            
+
             const totalPotential = Math.floor(Math.cbrt(game.totalCookiesEarned / PRESTIGE_BASE));
             const currentLevel = game.prestigeLevel || 0;
             const gain = totalPotential - currentLevel;
 
             if (gain > 0) {
                 pBtn.innerText = `ASCENDER (+${gain} Nivel)`;
-                pBtn.classList.add('available'); 
+                pBtn.classList.add('available');
             } else {
                 const nextPointEnergy = Math.pow(currentLevel + 1, 3) * PRESTIGE_BASE;
                 const remaining = nextPointEnergy - game.totalCookiesEarned;
@@ -2212,11 +2766,11 @@ function updateUI() {
     } else if (pBtn) {
         pBtn.style.display = 'none';
     }
-    
+
     // 5. HUD de Multiplicador de Prestigio
     const prestigeHud = document.getElementById('prestige-hud');
     const prestigeDisp = document.getElementById('prestige-display');
-    if(game.prestigeMult > 1) {
+    if (game.prestigeMult > 1) {
         if (prestigeHud) prestigeHud.style.display = 'block';
         if (prestigeDisp) prestigeDisp.innerText = `x${game.prestigeMult.toFixed(1)}`;
     }
@@ -2224,7 +2778,7 @@ function updateUI() {
     // --- 6. NUEVO: RADAR DE COMERCIO DE ANDRÓMEDA ---
     // Esto crea un indicador visual si tienes la mejora comprada
     let radarEl = document.getElementById('trade-signal');
-    
+
     // Si no existe, lo creamos dinámicamente (Lazy creation)
     if (!radarEl) {
         radarEl = document.createElement('div');
@@ -2257,8 +2811,8 @@ function updateUI() {
 
 function renderStore() {
     upgradesEl.innerHTML = '';
-    buildingsEl.innerHTML = ''; 
-    let anyUp = false; 
+    buildingsEl.innerHTML = '';
+    let anyUp = false;
 
     // 1. MEJORAS DE EDIFICIOS (MK-1, MK-2...)
     buildingsConfig.forEach(b => {
@@ -2273,13 +2827,13 @@ function renderStore() {
                 if (count >= th && !game.upgrades.includes(uid)) {
                     anyUp = true;
                     const cost = b.baseCost * 20 * (i + 1) * th;
-                    
+
                     const btn = document.createElement('div');
                     btn.className = 'upgrade-crate';
                     btn.innerHTML = upgradeIcons[i % upgradeIcons.length];
                     btn.dataset.cost = cost;
-                    btn.setAttribute('data-tooltip', `${b.name} MK-${i+1}\nx2 Producción\nCoste: ${formatNumber(cost)}`);
-                    
+                    btn.setAttribute('data-tooltip', `${b.name} MK-${i + 1}\nx2 Producción\nCoste: ${formatNumber(cost)}`);
+
                     btn.onclick = () => window.buyUpgrade(uid, cost);
                     upgradesEl.appendChild(btn);
                 }
@@ -2298,14 +2852,14 @@ function renderStore() {
 
         // --- MEJORAS DE ESCALA ---
         { id: 'scaling_efficiency_1', name: 'Retroalimentación Positiva', icon: '📈', cost: 100000000, desc: 'Gana +1% de prod. extra por cada 10k W/s.', req: () => getCPS() > 50000 && !game.upgrades.includes('scaling_efficiency_1') },
-        
+
         // --- NUEVO: MEJORA DE ANDRÓMEDA ---
-        { 
-            id: 'black_market_deal', 
-            name: 'Contrabando de Andrómeda', 
-            icon: '📦', 
-            cost: 2500000000, 
-            desc: 'Los comerciantes aparecen un 50% más seguido.', 
+        {
+            id: 'black_market_deal',
+            name: 'Contrabando de Andrómeda',
+            icon: '📦',
+            cost: 2500000000,
+            desc: 'Los comerciantes aparecen un 50% más seguido.',
             req: () => game.heavenlyUpgrades.includes('andromeda_trade') && !game.upgrades.includes('black_market_deal')
         },
 
@@ -2314,7 +2868,7 @@ function renderStore() {
             id: 'alien_tech_1',
             name: 'Xenolingüística',
             icon: '🗣️',
-            cost: 1000000, 
+            cost: 1000000,
             desc: 'Entendemos sus insultos. Los aliens aparecen un 30% más rápido.',
             req: () => game.heavenlyUpgrades.includes('alien_contact') && !game.upgrades.includes('alien_tech_1')
         },
@@ -2322,7 +2876,7 @@ function renderStore() {
             id: 'alien_tech_2',
             name: 'Disección de Grises',
             icon: '👽',
-            cost: 50000000, 
+            cost: 50000000,
             desc: 'Estudiar su anatomía revela puntos débiles. Aliens tienen -20% de vida.',
             req: () => game.upgrades.includes('alien_tech_1') && !game.upgrades.includes('alien_tech_2')
         },
@@ -2344,13 +2898,13 @@ function renderStore() {
 
         if (isEquipped && !game.upgrades.includes(powerId)) {
             specials.push({
-                id: powerId, name: `Sincronía: ${h.name}`, icon: '🔥', cost: h.cost * 50, desc: `Efectividad de ${h.icon} +50% y Producción Global +25%.`, req: () => true 
+                id: powerId, name: `Sincronía: ${h.name}`, icon: '🔥', cost: h.cost * 50, desc: `Efectividad de ${h.icon} +50% y Producción Global +25%.`, req: () => true
             });
         }
 
         if (isEquipped && game.upgrades.includes(powerId) && !game.upgrades.includes(masterId)) {
             let masterDesc = "";
-            switch(h.id) {
+            switch (h.id) {
                 case 'h_clicker': masterDesc = "Dra. Thorne: +15% producción pasiva global."; break;
                 case 'h_miner': masterDesc = "Marcus Voltz: Potencia la red un +50% adicional."; break;
                 case 'h_discount': masterDesc = "Silas Vane: +10% bono de eficiencia a dividendos."; break;
@@ -2360,7 +2914,7 @@ function renderStore() {
                 default: masterDesc = "Desbloquea el potencial oculto.";
             }
             specials.push({
-                id: masterId, name: `Protocolo Maestro: ${h.icon}`, icon: '👑', cost: h.cost * 500, desc: masterDesc, req: () => true 
+                id: masterId, name: `Protocolo Maestro: ${h.icon}`, icon: '👑', cost: h.cost * 500, desc: masterDesc, req: () => true
             });
         }
     });
@@ -2371,7 +2925,7 @@ function renderStore() {
             anyUp = true;
             const btn = document.createElement('div');
             const isCritical = s.id.includes('omega') || s.id.includes('master') || s.id.includes('andromeda') || s.id.includes('alien_tech');
-            btn.className = `upgrade-crate ${isCritical ? 'special-upgrade' : ''}`; 
+            btn.className = `upgrade-crate ${isCritical ? 'special-upgrade' : ''}`;
             btn.innerHTML = s.icon;
             btn.dataset.cost = s.cost;
             btn.setAttribute('data-tooltip', `${s.name}\n${s.desc}\nCoste: ${formatNumber(s.cost)}`);
@@ -2380,13 +2934,13 @@ function renderStore() {
         }
     });
 
-    if(!anyUp) upgradesEl.innerHTML = '<div style="color:#444; font-size:0.8rem; width:100%; text-align:center;">Juega más para desbloquear tecnología...</div>';
+    if (!anyUp) upgradesEl.innerHTML = '<div style="color:#444; font-size:0.8rem; width:100%; text-align:center;">Juega más para desbloquear tecnología...</div>';
 
     // 3. RENDERIZAR LISTA DE EDIFICIOS
-    let lockedShown = 0; 
+    let lockedShown = 0;
     for (let i = 0; i < buildingsConfig.length; i++) {
         const b = buildingsConfig[i];
-        
+
         // --- FILTRO: Si es un edificio de Andrómeda, NO se muestra en la tienda normal ---
         if (b.isAndromeda) continue;
 
@@ -2397,8 +2951,8 @@ function renderStore() {
             const cost = getCost(b.id);
             const div = document.createElement('div');
             div.className = 'building-item';
-            div.dataset.cost = cost; 
-            
+            div.dataset.cost = cost;
+
             if (!owned) lockedShown++;
 
             const isMystery = !owned && lockedShown === 2;
@@ -2413,7 +2967,7 @@ function renderStore() {
                 </div>
                 <div class="item-count">${count}</div>
             `;
-            
+
             if (isMystery) {
                 div.style.opacity = "0.5";
                 div.style.filter = "blur(1px)";
@@ -2450,26 +3004,26 @@ let areHelpersUnlocked = false;
 
 function checkUnlocks() {
     const helpersList = document.getElementById('helpers-list');
-    
+
     // REQUISITO: Tener al menos 150 Watts totales acumulados (o Nivel 5)
     // Ajusta este número según cuándo quieras que aparezcan los aliens/humanos
-    const unlockThreshold = 150; 
+    const unlockThreshold = 150;
 
     if (!areHelpersUnlocked && game.totalCookiesEarned >= unlockThreshold) {
         areHelpersUnlocked = true;
-        
+
         // Quitar clase oculta y añadir animación
         helpersList.classList.remove('locked-section');
         helpersList.classList.add('reveal-section');
-        
+
         // Renderizar por primera vez
         renderHelpers();
-        
+
         // Notificación de logro/progreso
         showNotification("📡 SEÑAL ENTRANTE", "Se ha desbloqueado la pestaña de PERSONAL.");
         sfxPrestige(); // Sonido importante
     }
-    
+
     // Si cargamos partida y ya teníamos progreso, aseguramos que se vea sin animación
     // (Esto se maneja en loadGame, pero por seguridad):
     if (areHelpersUnlocked && helpersList.classList.contains('locked-section')) {
@@ -2489,7 +3043,7 @@ function checkUnlocks() {
 function checkAvailability() {
     document.querySelectorAll('[data-cost]').forEach(el => {
         const c = parseFloat(el.dataset.cost);
-        if(game.cookies < c) el.classList.add('disabled');
+        if (game.cookies < c) el.classList.add('disabled');
         else el.classList.remove('disabled');
     });
 }
@@ -2500,18 +3054,18 @@ function checkAvailability() {
 
 function doClickLogic(cx, cy) {
     sfxClick(); // Sonido estándar agradable
-    
+
     // 1. AUMENTAR COMBO
     const maxCombo = game.upgrades.includes('upg_master_h_combo') ? 10.0 : 5.0;
-    
-    comboMultiplier += 0.05; 
-    if(comboMultiplier > maxCombo) comboMultiplier = maxCombo; 
-    comboTimer = 2.0; 
-    
+
+    comboMultiplier += 0.05;
+    if (comboMultiplier > maxCombo) comboMultiplier = maxCombo;
+    comboTimer = 2.0;
+
     const comboEl = document.getElementById('combo-display');
     if (comboEl) {
         comboEl.style.opacity = 1;
-        comboEl.style.transform = `scale(${1 + comboMultiplier/10})`;
+        comboEl.style.transform = `scale(${1 + comboMultiplier / 10})`;
         comboEl.innerText = `COMBO x${comboMultiplier.toFixed(2)}`;
     }
 
@@ -2522,20 +3076,20 @@ function doClickLogic(cx, cy) {
     // --- CÁLCULO DE CRÍTICO ---
     let critChance = 0;
     if (game.heavenlyUpgrades.includes('crit_master')) critChance += 0.05;
-    
+
     if (game.upgrades.includes('upg_master_h_crit')) {
-        critChance = 0.25; 
+        critChance = 0.25;
     } else if (game.helpers.includes('h_crit')) {
         critChance += 0.10;
     }
 
     if (Math.random() < critChance) {
         isCrit = true;
-        val *= 10; 
-        
+        val *= 10;
+
         // --- 🔇 SONIDO ELIMINADO ---
         // playTone(600, 'square', 0.1, 0.2); // <--- ESTA LÍNEA CAUSABA EL RUIDO MOLESTO
-        
+
         // Mantenemos el temblor de cámara para que se sienta el impacto
         camera.position.x += (Math.random() - 0.5) * 0.5;
         camera.position.y += (Math.random() - 0.5) * 0.5;
@@ -2544,10 +3098,10 @@ function doClickLogic(cx, cy) {
     // 3. APLICAR RESULTADO
     game.cookies += val;
     game.totalCookiesEarned += val;
-    
+
     if (!game.totalClicks) game.totalClicks = 0;
-    game.totalClicks++; 
-    game.clickCount++;  
+    game.totalClicks++;
+    game.clickCount++;
 
     // EVENTO PERLA AZUL
     if (game.totalClicks >= 10000 && !game.pearls.includes('blue')) {
@@ -2563,11 +3117,11 @@ function doClickLogic(cx, cy) {
 
     // 4. TEXTO FLOTANTE
     if (isCrit) {
-        createFloatingText(cx, cy, `¡CRÍTICO! +${formatNumber(val)}`, true); 
+        createFloatingText(cx, cy, `¡CRÍTICO! +${formatNumber(val)}`, true);
     } else {
         createFloatingText(cx, cy, `+${formatNumber(val)}`, false);
     }
-    
+
     updateUI();
 }
 
@@ -2578,7 +3132,7 @@ function createFloatingText(x, y, txt) {
     const el = document.createElement('div');
     el.className = 'floating-text';
     el.innerText = txt;
-    el.style.left = (x + (Math.random()-0.5)*30) + 'px';
+    el.style.left = (x + (Math.random() - 0.5) * 30) + 'px';
     el.style.top = (y - 30) + 'px';
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 800);
@@ -2587,7 +3141,7 @@ function createFloatingText(x, y, txt) {
 function formatNumber(n) {
     // Si es menor a 1000, son Watts simples
     if (n < 1000) return Math.floor(n) + ' W';
-    
+
     // Prefijos del Sistema Internacional
     // k=kilo, M=Mega, G=Giga, T=Tera, P=Peta, E=Exa, Z=Zetta, Y=Yotta
     if (n >= 1e24) return (n / 1e24).toFixed(2) + ' YW'; // YottaWatt (Dios)
@@ -2598,7 +3152,7 @@ function formatNumber(n) {
     if (n >= 1e9) return (n / 1e9).toFixed(2) + ' GW';  // GigaWatt
     if (n >= 1e6) return (n / 1e6).toFixed(2) + ' MW';  // MegaWatt
     if (n >= 1e3) return (n / 1e3).toFixed(2) + ' kW';  // KiloWatt
-    
+
     return Math.floor(n) + ' W';
 }
 
@@ -2606,7 +3160,7 @@ function formatNumber(n) {
 const CURRENT_VERSION = 1.0; // Cambiaremos esto si añadimos mecánicas nuevas en el futuro
 
 
-window.saveGame = function() {
+window.saveGame = function () {
     // Seguridad: inicializa campos críticos antes de guardar
     if (!game.upgrades) game.upgrades = [];
     if (!game.achievements) game.achievements = [];
@@ -2627,12 +3181,12 @@ window.saveGame = function() {
     };
 
     localStorage.setItem('quantumClickerUlt', JSON.stringify(savePackage));
-    
+
     // Feedback visual en el botón
     const btn = document.querySelector('button[onclick="saveGame()"]');
-    if(btn) {
-        const old = btn.innerText; 
-        btn.innerText = "💾 OK!"; 
+    if (btn) {
+        const old = btn.innerText;
+        btn.innerText = "💾 OK!";
         setTimeout(() => btn.innerText = old, 1000);
     }
 }
@@ -2641,12 +3195,12 @@ window.saveGame = function() {
 function loadGame() {
     // 1. Cargar el string del almacenamiento
     const rawSave = localStorage.getItem('quantumClickerUlt');
-    
+
     // CASO A: SI EXISTE PARTIDA GUARDADA (Jugador que regresa)
     if (rawSave) {
         // Aseguramos que NO se vea la intro, sino la interfaz completa
         document.body.classList.remove('intro-mode');
-        
+
         let parsedSave;
         try {
             parsedSave = JSON.parse(rawSave);
@@ -2669,7 +3223,7 @@ function loadGame() {
 
         // 3. FUSIONAR DATOS (MERGE INTELIGENTE / DEEP MERGE)
         // (Copiamos el bloque seguro que hicimos antes)
-        
+
         // A. Valores primitivos
         for (const key in loadedGame) {
             if (key !== 'buildings' && key !== 'upgrades' && key !== 'achievements' && key !== 'helpers' && key !== 'heavenlyUpgrades' && key !== 'pearls') {
@@ -2698,7 +3252,7 @@ function loadGame() {
         if (typeof game.prestigeLevel === 'undefined') game.prestigeLevel = game.antimatter || 0;
         if (typeof game.anomaliesClicked === 'undefined') game.anomaliesClicked = 0;
         if (typeof game.totalTimePlayed === 'undefined') game.totalTimePlayed = 0;
-        
+
         // Restaurar estado visual
         if (typeof game.isApocalypse !== 'undefined') isApocalypse = game.isApocalypse;
         else isApocalypse = false;
@@ -2710,11 +3264,11 @@ function loadGame() {
 
         recalculateStats();
         renderPearls();
-        
+
         // Restaurar sección de Ayudantes si corresponde
         if (game.totalCookiesEarned >= 150) {
             const hList = document.getElementById('helpers-list');
-            if(hList) {
+            if (hList) {
                 hList.classList.remove('locked-section');
                 areHelpersUnlocked = true;
             }
@@ -2727,17 +3281,17 @@ function loadGame() {
             if (secondsOffline > 60) {
                 let efficiency = 0.5;
                 if (game.heavenlyUpgrades.includes('offline_god')) efficiency = 1.0;
-                
+
                 const currentCPS = getCPS();
                 const offlineProduction = (currentCPS * secondsOffline) * efficiency;
-                
+
                 if (offlineProduction > 0) {
                     game.cookies += offlineProduction;
                     game.totalCookiesEarned += offlineProduction;
                     setTimeout(() => {
                         showSystemModal(
-                            "REGRESO AL UNIVERSO", 
-                            `Has estado en estasis durante ${formatTime(secondsOffline)}.\n\nSistemas auxiliares generaron:\n<span style="color:#00ff88; font-size:1.2em">+${formatNumber(offlineProduction)} Watts</span>\n(Eficiencia: ${efficiency*100}%)`, 
+                            "REGRESO AL UNIVERSO",
+                            `Has estado en estasis durante ${formatTime(secondsOffline)}.\n\nSistemas auxiliares generaron:\n<span style="color:#00ff88; font-size:1.2em">+${formatNumber(offlineProduction)} Watts</span>\n(Eficiencia: ${efficiency * 100}%)`,
                             false, null
                         );
                     }, 1000);
@@ -2745,7 +3299,7 @@ function loadGame() {
             }
         }
 
-    } 
+    }
     // CASO B: NO EXISTE PARTIDA (JUGADOR NUEVO)
     else {
         console.log("Iniciando Protocolo Génesis...");
@@ -2761,13 +3315,13 @@ function loadGame() {
 
 
 
-window.resetGame = function() {
-    
+window.resetGame = function () {
+
     showSystemModal(
-        "BORRADO DE DATOS", 
-        "¿Estás seguro de que quieres formatear el multiverso?\nTodo el progreso se perderá para siempre.", 
+        "BORRADO DE DATOS",
+        "¿Estás seguro de que quieres formatear el multiverso?\nTodo el progreso se perderá para siempre.",
         true, // Es una confirmación
-        function() {
+        function () {
             localStorage.removeItem('quantumClickerUlt');
             isApocalypse = false;
             location.reload();
@@ -2777,81 +3331,123 @@ window.resetGame = function() {
 
 
 // --- CONFIG LOGROS ---
-const achievementsConfig = [
-    // --- PULSOS MANUALES (CLICKS) ---
-    { 
-        id: 'click100', 
-        name: '⚙️ Operador de Manivela', 
-        desc: 'Registra 100 pulsos cinéticos manuales en el núcleo.', 
-        req: g => g.clickCount >= 100 
+// --- SISTEMA DE LOGROS PROCEDURALES (1000+ LOGROS) ---
+let achievementsConfig = [];
+
+const AchievementRegistry = {
+    // Generador de Logros de Energía (Logarítmico)
+    generateEnergy: () => {
+        const list = [];
+        const suffixes = ['', 'k', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
+        // Generar 100 niveles de energía
+        let amount = 1000;
+        for (let i = 1; i <= 100; i++) {
+            list.push({
+                id: `energy_total_${i}`,
+                name: `🔋 Magnate de Energía ${romanize(i)}`,
+                desc: `Acumula un total histórico de ${formatNumber(amount)} Watts.`,
+                req: g => g.totalCookiesEarned >= amount,
+                type: 'energy',
+                reward: `+1% Prod. Global`
+            });
+            amount *= 5; // Crecimiento x5
+        }
+        return list;
     },
-    { 
-        id: 'click1k', 
-        name: '🧠 Interfaz Neuronal', 
-        desc: 'Sincroniza 1,000 pulsos directos con la red.', 
-        req: g => g.clickCount >= 1000 
+
+    // Generador de Logros de Clicks
+    generateClicks: () => {
+        const list = [];
+        let clicks = 100;
+        for (let i = 1; i <= 50; i++) {
+            list.push({
+                id: `click_manual_${i}`,
+                name: `👆 Dedo Biónico ${romanize(i)}`,
+                desc: `Registra ${formatNumber(clicks)} clicks manuales.`,
+                req: g => g.clickCount >= clicks,
+                type: 'click',
+                reward: `+1% Prod. Global`
+            });
+            clicks *= 2;
+        }
+        return list;
     },
-    { 
-        id: 'click10k', 
-        name: '⚡ Maestro de la Cinética', 
-        desc: 'Alcanza el límite físico de 10,000 pulsos manuales.', 
-        req: g => g.clickCount >= 10000 
+
+    // Generador de Logros de Edificios (Para CADA edificio)
+    generateBuildings: () => {
+        const list = [];
+        // Niveles de cantidad: 1, 10, 25, 50, 100, 150... hasta 1000
+        const milestones = [1, 10, 25, 50, 100];
+        for (let i = 150; i <= 1000; i += 50) milestones.push(i);
+
+        buildingsConfig.forEach(b => {
+            milestones.forEach((level, idx) => {
+                list.push({
+                    id: `build_${b.id}_${level}`,
+                    name: `${b.icon} Dueño de ${b.name} ${romanize(idx + 1)}`,
+                    desc: `Ten ${level} edificios de tipo ${b.name}.`,
+                    req: g => (g.buildings[b.id] || 0) >= level,
+                    type: 'building',
+                    reward: `+1% Prod. Global`
+                });
+            });
+        });
+        return list;
     },
-    
-    // --- MÓDULOS TECNOLÓGICOS (MEJORAS) ---
-    { 
-        id: 'upg5', 
-        name: '🔧 Ingeniero Junior', 
-        desc: 'Instala 5 módulos tecnológicos de optimización de red.', 
-        req: g => g.upgrades.length >= 5 
+
+    // Generador de Logros de Producción (CPS)
+    generateCPS: () => {
+        const list = [];
+        let cps = 10;
+        for (let i = 1; i <= 80; i++) {
+            list.push({
+                id: `cps_flow_${i}`,
+                name: `⚡ Flujo Estable ${romanize(i)}`,
+                desc: `Alcanza una producción de ${formatNumber(cps)} W/s.`,
+                req: () => getCPS() >= cps,
+                type: 'cps',
+                reward: `+1% Prod. Global`
+            });
+            cps *= 3;
+        }
+        return list;
     },
-    { 
-        id: 'upg20', 
-        name: '🏛️ Arquitecto de Sistemas', 
-        desc: 'Implementa 20 protocolos de tecnología avanzada.', 
-        req: g => g.upgrades.length >= 20 
-    },
-    
-    // --- INFRAESTRUCTURA Y POTENCIA ---
-    { 
-        id: 'build10', 
-        name: '🏗️ Capataz Energético', 
-        desc: 'Despliega 10 estructuras de generación en el sector.', 
-        req: g => Object.values(g.buildings).reduce((a,b)=>a+b,0) >= 10 
-    },
-    { 
-        id: 'cps100', 
-        name: '📈 Pico de Tensión', 
-        desc: 'Logra una salida estable de 100 W/s.', 
-        req: () => getCPS() >= 100 
-    },
-    { 
-        id: 'million', 
-        name: '🔋 Reserva de Megavatios', 
-        desc: 'Genera un acumulado histórico de 1 MW (MegaWatt).', 
-        req: g => g.totalCookiesEarned >= 1000000 
-    },
-    { 
-        id: 'hacker', 
-        name: '🌀 Sincronía Crítica', 
-        desc: 'Estabiliza el flujo cuántico en un combo x3.0.', 
-        req: () => comboMultiplier >= 3.0 
-    },
-    
-    // --- DIVISIÓN ALIENÍGENA (AYUDANTES) ---
-    { 
-        id: 'helper1', 
-        name: '🤝 Asesoría Extraterrestre', 
-        desc: 'Firma tu primer contrato con un especialista alienígena.', 
-        req: g => g.helpers && g.helpers.length >= 1 
-    },
-    { 
-        id: 'helper3', 
-        name: '🌌 Consejo de Sabios', 
-        desc: 'Coordina a 3 especialistas de élite simultáneamente.', 
-        req: g => g.helpers && g.helpers.length >= 3 
-    }
-];
+
+    // Logros manuales especiales (Prestigio, Ayudantes, etc)
+    special: [
+        { id: 'hacker', name: '🌀 Sincronía Crítica', desc: 'Combo x3.0.', req: () => comboMultiplier >= 3.0, type: 'special' },
+        { id: 'prestige1', name: '🌌 Ascensión I', desc: 'Realiza tu primer prestigio.', req: g => g.prestigeLevel >= 1, type: 'prestige' },
+        { id: 'helper1', name: '🤝 Contacto Alien', desc: 'Contrata 1 ayudante.', req: g => g.helpers && g.helpers.length >= 1, type: 'special' },
+        { id: 'full_upgrades', name: '🔧 Tecnócrata', desc: '50 Mejoras compradas.', req: g => g.upgrades.length >= 50, type: 'special' }
+    ]
+};
+
+// Función auxiliar para números romanos
+function romanize(num) {
+    if (isNaN(num)) return NaN;
+    var digits = String(+num).split(""),
+        key = ["", "C", "CC", "CCC", "CD", "D", "DC", "DCC", "DCCC", "CM",
+            "", "X", "XX", "XXX", "XL", "L", "LX", "LXX", "LXXX", "XC",
+            "", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"],
+        roman = "",
+        i = 3;
+    while (i--) roman = (key[+digits.pop() + (i * 10)] || "") + roman;
+    return Array(+digits.join("") + 1).join("M") + roman;
+}
+
+// INICIALIZADOR DE LOGROS
+function initAchievements() {
+    achievementsConfig = [
+        ...AchievementRegistry.generateEnergy(),
+        ...AchievementRegistry.generateClicks(),
+        ...AchievementRegistry.generateBuildings(),
+        ...AchievementRegistry.generateCPS(),
+        ...AchievementRegistry.special
+    ];
+    console.log(`🏆 Cargados ${achievementsConfig.length} logros procedurals.`);
+}
+
+
 
 // --- FRASES NOTICIAS ---
 const newsHeadlines = [
@@ -2953,11 +3549,11 @@ function updateNews() {
 setInterval(updateNews, 20000); // Cambiar noticia cada 20s
 updateNews(); // Primera noticia
 
-        // --- LÓGICA DE INTERFAZ DE LOGROS ---
-window.toggleAchievements = function() {
+// --- LÓGICA DE INTERFAZ DE LOGROS ---
+window.toggleAchievements = function () {
     const modal = document.getElementById('modal-achievements');
     const grid = document.getElementById('achievements-grid');
-    
+
     if (modal.style.display === 'flex') {
         modal.style.display = 'none';
     } else {
@@ -2981,18 +3577,18 @@ window.toggleAchievements = function() {
 // SISTEMA DE ASCENSIÓN
 // ==========================================
 
-window.doPrestige = function() {
+window.doPrestige = function () {
     const modal = document.getElementById('modal-ascension');
     const PRESTIGE_BASE = 1000000;
-    
+
     // Tu potencial total histórico
     const totalPotential = Math.floor(Math.cbrt(game.totalCookiesEarned / PRESTIGE_BASE));
-    
+
     // Lo que ganas es: Potencial - Lo que ya has ganado en total (Nivel)
     // Usamos prestigeLevel (o antimatter si es partida antigua, ver loadGame)
     const currentLevel = game.prestigeLevel || game.antimatter;
     let amountToGain = totalPotential - currentLevel;
-    
+
     if (amountToGain <= 0) {
         // ... lógica de aviso de error (igual que tenías) ...
         const nextPoint = currentLevel + 1;
@@ -3006,19 +3602,19 @@ window.doPrestige = function() {
     const nextMult = 1 + ((currentLevel + amountToGain) * 0.1);
     document.getElementById('asc-gain-antimatter').innerText = `+${formatNumber(amountToGain)}`;
     document.getElementById('asc-new-mult').innerText = `x${nextMult.toFixed(1)}`;
-    
+
     modal.dataset.gain = amountToGain;
     modal.style.display = 'flex';
 };
 
-window.closeAscension = function() {
+window.closeAscension = function () {
     document.getElementById('modal-ascension').style.display = 'none';
 };
 
-window.confirmAscension = function() {
+window.confirmAscension = function () {
     const modal = document.getElementById('modal-ascension');
     const gain = parseInt(modal.dataset.gain);
-    
+
     if (!gain || gain <= 0) return;
 
     sfxPrestige();
@@ -3029,13 +3625,19 @@ window.confirmAscension = function() {
     game.upgrades = [];
     game.helpers = [];
     isApocalypse = false;
-    
+    comboMultiplier = 1.0;
+    comboTimer = 0;
+    buffMultiplier = 1;
+    clickBuffMultiplier = 1;
+    currentCoreTier = -1; // Forzar re-evaluación visual del núcleo
+    if (orbitalRing) { scene.remove(orbitalRing); orbitalRing.geometry.dispose(); orbitalRing.material.dispose(); orbitalRing = null; }
+
     // 2. APLICAR RECOMPENSAS (ARREGLADO)
     game.antimatter += gain;      // Moneda (+1)
     game.prestigeLevel += gain;   // Nivel (+1) -> NUNCA BAJA
-    
+
     // El multi se basa en el NIVEL, no en la moneda gastable
-    game.prestigeMult = 1 + (game.prestigeLevel * 0.1); 
+    game.prestigeMult = 1 + (game.prestigeLevel * 0.1);
 
     // 3. Reiniciar configs
     buildingsConfig.forEach(u => { game.buildings[u.id] = 0; u.currentPower = u.basePower; });
@@ -3054,7 +3656,7 @@ window.confirmAscension = function() {
 // ==========================================
 let pendingAction = null;
 
-window.showSystemModal = function(title, message, isConfirm, actionCallback) {
+window.showSystemModal = function (title, message, isConfirm, actionCallback) {
     const modal = document.getElementById('modal-system');
     const titleEl = document.getElementById('sys-title');
     const msgEl = document.getElementById('sys-msg');
@@ -3066,24 +3668,24 @@ window.showSystemModal = function(title, message, isConfirm, actionCallback) {
 
     if (isConfirm) {
         cancelBtn.style.display = 'block';
-        titleEl.style.color = '#ff5252'; 
+        titleEl.style.color = '#ff5252';
     } else {
         cancelBtn.style.display = 'none';
         titleEl.style.color = '#00ff88';
     }
 
     pendingAction = actionCallback;
-    
-    okBtn.onclick = function() {
+
+    okBtn.onclick = function () {
         if (pendingAction) pendingAction();
         closeSystemModal();
-        sfxClick(); 
+        sfxClick();
     };
 
     modal.style.display = 'flex';
 };
 
-window.closeSystemModal = function() {
+window.closeSystemModal = function () {
     document.getElementById('modal-system').style.display = 'none';
     pendingAction = null;
 };
@@ -3094,9 +3696,9 @@ window.closeSystemModal = function() {
 // SISTEMA DE CÓDICE (COLECCIÓN)
 // ==========================================
 
-window.toggleCollection = function() {
+window.toggleCollection = function () {
     const modal = document.getElementById('modal-collection');
-    
+
     if (modal.style.display === 'flex') {
         modal.style.display = 'none';
     } else {
@@ -3111,25 +3713,25 @@ window.toggleCollection = function() {
 // SISTEMA DE CÓDICE + TOOLTIP GLOBAL
 // ==========================================
 
-window.renderCollection = function() {
+window.renderCollection = function () {
     const artifactsGrid = document.getElementById('collection-artifacts');
     const helpersGrid = document.getElementById('collection-helpers');
     const upgradesGrid = document.getElementById('collection-upgrades');
 
-    if(artifactsGrid) artifactsGrid.innerHTML = '';
-    if(helpersGrid) helpersGrid.innerHTML = '';
-    if(upgradesGrid) upgradesGrid.innerHTML = '';
+    if (artifactsGrid) artifactsGrid.innerHTML = '';
+    if (helpersGrid) helpersGrid.innerHTML = '';
+    if (upgradesGrid) upgradesGrid.innerHTML = '';
 
     // Función interna para crear el cuadradito (Tile)
     const createTile = (container, type, unlocked, icon, title, desc, req) => {
         const div = document.createElement('div');
         div.className = `collection-item ${type} ${unlocked ? 'unlocked' : 'locked'}`;
-        div.innerHTML = unlocked ? icon : '🔒'; 
+        div.innerHTML = unlocked ? icon : '🔒';
 
         // Conexión con el Tooltip Global
         div.onmouseenter = (e) => showTooltip(e, title, desc, req, unlocked);
         div.onmouseleave = () => hideTooltip();
-        div.onmousemove = (e) => moveTooltip(e); 
+        div.onmousemove = (e) => moveTooltip(e);
 
         container.appendChild(div);
     };
@@ -3158,14 +3760,14 @@ window.renderCollection = function() {
             const uid = `${b.id}-${th}`;
             const has = game.upgrades.includes(uid);
             const icon = upgradeIcons[i % upgradeIcons.length] || '⚡';
-            
+
             // Nombres Sci-Fi según nivel
             const mkNames = ["Optimización de Bobinas", "Refuerzo de Grafeno", "Núcleo de Superconducción", "Entrelazamiento Cuántico"];
             const currentMkName = mkNames[i] || "Protocolo de Hiper-Eficiencia";
 
-            createTile(upgradesGrid, 'upgrade', has, icon, 
-                `${b.name}: ${currentMkName} (MK-${i+1})`, 
-                "Aumenta la salida de Watts al doble (x2).", 
+            createTile(upgradesGrid, 'upgrade', has, icon,
+                `${b.name}: ${currentMkName} (MK-${i + 1})`,
+                "Aumenta la salida de Watts al doble (x2).",
                 `Requisito: Desplegar ${th} unidades de ${b.name}.`
             );
         });
@@ -3188,7 +3790,7 @@ window.renderCollection = function() {
 const globalTooltip = document.getElementById('global-tooltip');
 
 function showTooltip(e, title, desc, req, unlocked) {
-    if(!globalTooltip) return;
+    if (!globalTooltip) return;
 
     // Construir HTML del tooltip
     let html = '';
@@ -3204,21 +3806,21 @@ function showTooltip(e, title, desc, req, unlocked) {
 }
 
 function moveTooltip(e) {
-    if(!globalTooltip) return;
-    
+    if (!globalTooltip) return;
+
     // Posición relativa al ratón (+15px para que no tape el cursor)
     const x = e.clientX + 15;
     const y = e.clientY + 15;
-    
+
     // Evitar que se salga de la pantalla (Lógica básica)
     // Si quieres algo más pro, habría que calcular window.innerWidth
-    
+
     globalTooltip.style.left = x + 'px';
     globalTooltip.style.top = y + 'px';
 }
 
 function hideTooltip() {
-    if(globalTooltip) globalTooltip.style.display = 'none';
+    if (globalTooltip) globalTooltip.style.display = 'none';
 }
 
 
@@ -3234,14 +3836,14 @@ function triggerOmegaMinorGlitch() {
 
     // 2. Efecto visual en el DOM (Clase CSS)
     document.body.classList.add('omega-buy-glitch');
-    
+
     // 3. Reacción en Three.js
     if (mainObject && glowMesh) {
         // Un impulso repentino de luz y escala
         const originalScale = mainObject.scale.x;
         mainObject.scale.setScalar(originalScale * 1.5);
         mainObject.material.emissiveIntensity = 5;
-        
+
         // Pequeño desplazamiento aleatorio de cámara
         const shakeX = (Math.random() - 0.5) * 2;
         const shakeY = (Math.random() - 0.5) * 2;
@@ -3276,7 +3878,7 @@ function unlockPearl(color) {
 }
 
 // Equipar/Desequipar una perla
-window.togglePearl = function(color) {
+window.togglePearl = function (color) {
     // Si no la tienes, no haces nada
     if (!game.pearls.includes(color)) {
         showNotification("🔒 BLOQUEADO", "Aún no has encontrado esta Perla Angular.");
@@ -3291,16 +3893,16 @@ window.togglePearl = function(color) {
     } else {
         // Si te pones una nueva
         game.activePearl = color;
-        
+
         // Efectos visuales inmediatos
         if (color === 'red') {
             isApocalypse = true; // Activar modo rojo
-            sfxAnomaly(); 
+            sfxAnomaly();
         } else {
             isApocalypse = false; // Las otras perlas limpian el apocalipsis
             sfxClick();
         }
-        
+
         showNotification("💎 EQUIPADO", `${pearlsConfig[color].name} activa.`);
     }
 
@@ -3368,13 +3970,20 @@ function renderPearls() {
 // ARRANQUE Y UTILIDADES
 // ==========================================
 
+// Aviso de fotosensibilidad (antes de cargar)
+initSafeMode();
+initRadio();
+
 // Carga inicial
+// Inicializar logros procedurals antes de cargar nada
+initAchievements();
+
 loadGame();
 
 // Inicializar contadores a 0 si no existen
 buildingsConfig.forEach(u => {
     if (!game.buildings[u.id]) game.buildings[u.id] = 0;
-    u.currentPower = u.basePower; 
+    u.currentPower = u.basePower;
 });
 
 // Recalcular mejoras compradas
@@ -3382,6 +3991,20 @@ recalculateStats();
 
 // Iniciar motor gráfico
 initThree();
+
+// FORZAR ACTUALIZACIÓN VISUAL DEL NÚCLEO
+// (Porque recalculateStats ocurrió antes de que mainObject existiera)
+updateCoreAppearance();
+
+// Si estamos en la intro, re-aplicar estado visual (porque loadGame() 
+// llamó a startIntroSequence() ANTES de que existieran los objetos 3D)
+if (isIntroActive && mainObject) {
+    mainObject.material.emissiveIntensity = 0;
+    mainObject.material.color.setHex(0x000000);
+    mainObject.material.emissive.setHex(0x000000);
+    if (glowMesh) glowMesh.visible = false;
+    if (starMesh) starMesh.visible = false;
+}
 
 // Renderizar UI inicial
 renderStore();
@@ -3412,20 +4035,20 @@ setTimeout(spawnAnomaly, 5000); // Primera anomalía a los 5 segundos
 
 const heavenlyConfig = [
     // --- NÚCLEO (INICIO) ---
-    { 
-        id: 'genesis', name: 'La semilla', icon: '💥', cost: 1, 
-        x: 400, y: 300, 
-        desc: 'El comienzo de todo. Empiezas con 100 Watts tras reiniciar.', 
-        parents: [] 
+    {
+        id: 'genesis', name: 'La semilla', icon: '💥', cost: 1,
+        x: 400, y: 300,
+        desc: 'El comienzo de todo. Empiezas con 100 Watts tras reiniciar.',
+        parents: []
     },
     // --- MEJORA DE COMERCIANTES (UBICACIÓN ACCESIBLE) ---
-    { 
-        id: 'andromeda_trade', 
-        name: 'Comerciantes de Andrómeda', 
-        icon: '⚖️', 
+    {
+        id: 'andromeda_trade',
+        name: 'Comerciantes de Andrómeda',
+        icon: '⚖️',
         cost: 10, // Barato para la primera ascensión
         x: 200, y: 200, // Posición visible arriba a la izquierda
-        desc: 'Habilita rutas comerciales con Andrómeda. Aparecerán naves mercantes con tecnología única.', 
+        desc: 'Habilita rutas comerciales con Andrómeda. Aparecerán naves mercantes con tecnología única.',
         parents: ['genesis'] // Se desbloquea comprando la primera mejora
     },
 
@@ -3436,94 +4059,102 @@ const heavenlyConfig = [
         desc: 'Desbloquea visitas alienígenas (x2, x5, x15 Energía).',
         icon: '👽',
         cost: 10, // Muy accesible en la primera ascensión
-        x: 400, y: 200, 
-        parents: ['genesis'] 
+        x: 400, y: 200,
+        parents: ['genesis']
     },
     {
-        id: 'galaxy_brain', name: 'Cerebro Galáctico', icon: '🧠', cost: 30, 
-        x: 400, y: 120, 
-        desc: 'Por cada Logro desbloqueado, +2% de Producción Global.', 
-        parents: ['alien_contact'] 
+        id: 'galaxy_brain', name: 'Cerebro Galáctico', icon: '🧠', cost: 30,
+        x: 400, y: 120,
+        desc: 'Por cada Logro desbloqueado, +2% de Producción Global.',
+        parents: ['alien_contact']
     },
-    { 
-        id: 'abduction_tech', name: 'Tecnología de Rapto', icon: '🛸', cost: 100, 
-        x: 320, y: 50, 
-        desc: 'Los Aliens aparecen un 50% más rápido.', 
-        parents: ['galaxy_brain'] 
+    {
+        id: 'abduction_tech', name: 'Tecnología de Rapto', icon: '🛸', cost: 100,
+        x: 320, y: 50,
+        desc: 'Los Aliens aparecen un 50% más rápido.',
+        parents: ['galaxy_brain']
     },
 
     // --- RAMA IZQUIERDA: INDUSTRIAL (PRODUCCIÓN) ---
-    { 
-        id: 'starter_kit', name: 'Kit de Supervivencia', icon: '📦', cost: 5, 
-        x: 300, y: 300, 
-        desc: 'Inicias con 10 Gen. Manuales y 5 Hámsters gratis.', 
-        parents: ['genesis'] 
+    {
+        id: 'starter_kit', name: 'Kit de Supervivencia', icon: '📦', cost: 5,
+        x: 300, y: 300,
+        desc: 'Inicias con 10 Gen. Manuales y 5 Hámsters gratis.',
+        parents: ['genesis']
     },
-    { 
-        id: 'perm_prod_1', name: 'Eficiencia Industrial', icon: '🏭', cost: 20, 
-        x: 200, y: 250, 
-        desc: 'Producción de edificios +15% PERMANENTE.', 
-        parents: ['starter_kit'] 
+    {
+        id: 'perm_prod_1', name: 'Eficiencia Industrial', icon: '🏭', cost: 20,
+        x: 200, y: 250,
+        desc: 'Producción de edificios +15% PERMANENTE.',
+        parents: ['starter_kit']
     },
-    { 
-        id: 'cheaper_builds', name: 'Arquitectura Cuántica', icon: '📉', cost: 50, 
-        x: 180, y: 350, 
-        desc: 'Edificios cuestan un 5% menos.', 
-        parents: ['starter_kit'] 
+    {
+        id: 'cheaper_builds', name: 'Arquitectura Cuántica', icon: '📉', cost: 50,
+        x: 180, y: 350,
+        desc: 'Edificios cuestan un 5% menos.',
+        parents: ['starter_kit']
     },
 
     // --- RAMA DERECHA: CINÉTICA (CLICKS) ---
-    { 
-        id: 'click_transistor', name: 'Transistor de Dedo', icon: '👆', cost: 10, 
-        x: 500, y: 300, 
-        desc: 'Clicks generan 1% de tu WPS.', 
-        parents: ['genesis'] 
+    {
+        id: 'click_transistor', name: 'Transistor de Dedo', icon: '👆', cost: 10,
+        x: 500, y: 300,
+        desc: 'Clicks generan 1% de tu WPS.',
+        parents: ['genesis']
     },
-    { 
-        id: 'crit_master', name: 'Punto Débil', icon: '🎯', cost: 25, 
-        x: 600, y: 250, 
-        desc: 'Probabilidad de crítico manual +5%.', 
-        parents: ['click_transistor'] 
+    {
+        id: 'crit_master', name: 'Punto Débil', icon: '🎯', cost: 25,
+        x: 600, y: 250,
+        desc: 'Probabilidad de crítico manual +5%.',
+        parents: ['click_transistor']
     },
-    { 
-        id: 'click_god', name: 'Mano de Dios', icon: '⚡', cost: 80, 
-        x: 620, y: 350, 
-        desc: 'El 1% de WPS pasa a ser el 5% de WPS por click.', 
-        parents: ['click_transistor'] 
+    {
+        id: 'click_god', name: 'Mano de Dios', icon: '⚡', cost: 80,
+        x: 620, y: 350,
+        desc: 'El 1% de WPS pasa a ser el 5% de WPS por click.',
+        parents: ['click_transistor']
     },
 
     // --- RAMA INFERIOR: CAOS (ANOMALÍAS) ---
-    { 
-        id: 'lucky_star', name: 'Suerte Cósmica', icon: '🍀', cost: 15, 
-        x: 400, y: 400, 
-        desc: 'Anomalías aparecen un 15% más frecuentemente.', 
-        parents: ['genesis'] 
+    {
+        id: 'lucky_star', name: 'Suerte Cósmica', icon: '🍀', cost: 15,
+        x: 400, y: 400,
+        desc: 'Anomalías aparecen un 15% más frecuentemente.',
+        parents: ['genesis']
     },
-    { 
-        id: 'wrath_control', name: 'Diplomacia del Vacío', icon: '🤝', cost: 50, 
-        x: 300, y: 480, 
-        desc: 'Anomalías rojas fallan un 50% menos.', 
-        parents: ['lucky_star'] 
+    {
+        id: 'wrath_control', name: 'Diplomacia del Vacío', icon: '🤝', cost: 50,
+        x: 300, y: 480,
+        desc: 'Anomalías rojas fallan un 50% menos.',
+        parents: ['lucky_star']
     },
-    { 
-        id: 'golden_duration', name: 'Estabilidad Temporal', icon: '⏳', cost: 50, 
-        x: 500, y: 480, 
-        desc: 'Buffs de anomalías duran +10 segundos.', 
-        parents: ['lucky_star'] 
+    {
+        id: 'golden_duration', name: 'Estabilidad Temporal', icon: '⏳', cost: 50,
+        x: 500, y: 480,
+        desc: 'Buffs de anomalías duran +10 segundos.',
+        parents: ['lucky_star']
     },
 
     // --- EL FINAL DEL ÁRBOL (ENDGAME ACCESIBLE) ---
-    { 
-        id: 'singularity', name: 'LA SINGULARIDAD', icon: '👁️', cost: 500, 
-        x: 400, y: 550, 
-        desc: 'Desbloquea el acceso a las Perlas Legendarias.', 
-        parents: ['wrath_control', 'golden_duration'] 
+    {
+        id: 'singularity', name: 'LA SINGULARIDAD', icon: '👁️', cost: 500,
+        x: 400, y: 550,
+        desc: 'Desbloquea el acceso a las Perlas Legendarias.',
+        parents: ['wrath_control', 'golden_duration']
     },
-    { 
-        id: 'multiverse', name: 'Multiverso', icon: '🪐', cost: 5000, 
-        x: 550, y: 50, 
-        desc: 'Prestigio Infinito: El multiplicador de Ascensión es el doble de efectivo.', 
-        parents: ['abduction_tech', 'galaxy_brain'] 
+    {
+        id: 'multiverse', name: 'Multiverso', icon: '🪐', cost: 5000,
+        x: 550, y: 50,
+        desc: 'Prestigio Infinito: El multiplicador de Ascensión es el doble de efectivo.',
+        parents: ['abduction_tech', 'galaxy_brain']
+    },
+
+    // --- RAMA OFFLINE ---
+    {
+        id: 'offline_god', name: 'Estasis Perfecta', icon: '🌙', cost: 200,
+        x: 200, y: 400,
+        desc: 'Producción offline al 100% de eficiencia (en vez del 50%).',
+        parents: ['perm_prod_1']
     }
 ];
 
@@ -3548,13 +4179,13 @@ setInterval(() => {
 setInterval(() => {
     // Solo intentamos si el jugador tiene la mejora de ascensión
     if (game.heavenlyUpgrades.includes('alien_contact')) {
-        
+
         // Probabilidad base: 10% cada 5 segundos
         let chance = 0.1;
 
         // Si compró la mejora "Xenolingüística", sube la probabilidad
         if (game.upgrades.includes('alien_tech_1')) chance += 0.05;
-        
+
         // Si tiene la mejora del árbol "Tecnología de Rapto", sube más
         if (game.heavenlyUpgrades.includes('abduction_tech')) chance += 0.1;
 
@@ -3572,13 +4203,13 @@ setInterval(() => {
 // Variable para guardar las mejoras celestiales compradas
 // Asegúrate de añadir "heavenlyUpgrades: []" al objeto "game" inicial al principio del archivo.
 
-window.openHeavenTree = function() {
+window.openHeavenTree = function () {
     document.getElementById('modal-heaven').style.display = 'flex';
     document.getElementById('heaven-antimatter').innerText = formatNumber(game.antimatter);
     renderHeavenTree();
 };
 
-window.closeHeaven = function() {
+window.closeHeaven = function () {
     document.getElementById('modal-heaven').style.display = 'none';
     sfxClick(); // Un sonidito al cerrar queda bien
 };
@@ -3588,7 +4219,7 @@ function renderHeavenTree() {
     const canvas = document.getElementById('heaven-canvas');
     const tooltip = document.getElementById('heaven-tooltip');
     const ctx = canvas.getContext('2d');
-    
+
     // Configuración
     const treeW = 800; const treeH = 600;
     canvas.width = treeW; canvas.height = treeH;
@@ -3605,7 +4236,7 @@ function renderHeavenTree() {
     heavenlyConfig.forEach(node => {
         const isBought = game.heavenlyUpgrades.includes(node.id);
         const isAvailable = !isBought && (node.parents.length === 0 || node.parents.some(pid => game.heavenlyUpgrades.includes(pid)));
-        
+
         // --- DIBUJAR LÍNEAS ---
         if (node.parents.length > 0) {
             node.parents.forEach(pid => {
@@ -3624,17 +4255,17 @@ function renderHeavenTree() {
         // --- CREAR NODO ---
         const div = document.createElement('div');
         div.className = `heaven-node ${isBought ? 'bought' : (isAvailable ? 'available' : 'locked')}`;
-        div.style.left = node.x + 'px'; 
+        div.style.left = node.x + 'px';
         div.style.top = node.y + 'px';
         div.innerHTML = node.icon;
-        
+
         // Tooltip logic
         div.onmouseenter = (e) => {
             const status = isBought ? "✅ COMPRADO" : (isAvailable ? `CLICK PARA COMPRAR` : "🔒 BLOQUEADO");
             const costTxt = isBought ? "" : `\nCoste: ${formatNumber(node.cost)} AM`;
-            tooltip.innerHTML = `<strong style="color:#b388ff">${node.name}</strong><br>${node.desc}<br><br><span style="color:${isAvailable?'#ffd700':'#888'}">${status}${costTxt}</span>`;
+            tooltip.innerHTML = `<strong style="color:#b388ff">${node.name}</strong><br>${node.desc}<br><br><span style="color:${isAvailable ? '#ffd700' : '#888'}">${status}${costTxt}</span>`;
             tooltip.style.display = 'block';
-            
+
             const boxRect = document.querySelector('.heaven-modal-box').getBoundingClientRect();
             const nodeRect = div.getBoundingClientRect();
             tooltip.style.top = (nodeRect.bottom - boxRect.top + 10) + 'px';
@@ -3642,7 +4273,7 @@ function renderHeavenTree() {
         };
 
         div.onmouseleave = () => { tooltip.style.display = 'none'; };
-        
+
         // FIX DE CLIC: Asegurar que el evento se capture y no se propague
         div.onclick = (e) => {
             e.preventDefault();
@@ -3660,10 +4291,10 @@ function renderHeavenTree() {
 function buyHeavenlyUpgrade(node) {
     // 1. Si ya está comprado, no hacer nada
     if (game.heavenlyUpgrades.includes(node.id)) return;
-    
+
     // 2. Comprobar disponibilidad real
     const isAvailable = node.parents.length === 0 || node.parents.some(pid => game.heavenlyUpgrades.includes(pid));
-    
+
     if (!isAvailable) {
         showNotification("🔒 BLOQUEADO", "Necesitas las mejoras previas.");
         return;
@@ -3674,10 +4305,10 @@ function buyHeavenlyUpgrade(node) {
         sfxBuy();
         game.antimatter -= node.cost;
         game.heavenlyUpgrades.push(node.id);
-        
+
         // Feedback visual
         showNotification("✨ ACTIVADO", `${node.name} se ha fusionado con tu realidad.`);
-        
+
         // RECALCULAR Y GUARDAR
         recalculateStats(); // <--- Crucial para que el bono funcione al instante
         renderHeavenTree();
@@ -3689,7 +4320,7 @@ function buyHeavenlyUpgrade(node) {
 }
 
 // Función final que se llama para volver al juego
-window.finishAscension = function() {
+window.finishAscension = function () {
     closeHeaven();
     // Aquí podrías añadir una animación de "Big Bang"
     location.reload(); // Recargar para aplicar cambios limpios
@@ -3711,11 +4342,11 @@ window.finishAscension = function() {
 // SISTEMA DE IMPORTAR / EXPORTAR
 // ==========================================
 
-window.exportSave = function() {
+window.exportSave = function () {
     saveGame();
     const jsonSave = JSON.stringify(game);
     const encodedSave = btoa(jsonSave);
-    
+
     navigator.clipboard.writeText(encodedSave).then(() => {
         showSystemModal("✅ CÓDIGO COPIADO", "Tu código de guardado está en el portapapeles.\nGuárdalo en un lugar seguro.", false, null);
     }).catch(err => {
@@ -3724,7 +4355,7 @@ window.exportSave = function() {
 };
 
 
-window.importSave = function() {
+window.importSave = function () {
     const userCode = prompt("Pega aquí tu código de guardado:");
     if (!userCode) return;
 
@@ -3813,14 +4444,14 @@ function updateStats() {
     const timeString = `${h}h ${m}m ${s}s`;
 
     const format = (typeof formatNumber === 'function') ? formatNumber : (n) => n.toLocaleString();
-    
+
     const html = `
         <p>Tiempo Jugado: <span style="color:#00e5ff">${timeString}</span></p>
         <p>Energía Total: <span style="color:#ffd700">${format(totalEnergy)}</span></p>
         <p>Clicks Totales: <span>${clicks.toLocaleString()}</span></p>
         <p>Anomalías detectadas: <span style="color:#ff0055">${anomalies}</span></p>
     `;
-    
+
     const content = document.getElementById('stats-content');
     if (content) content.innerHTML = html;
 }
@@ -3838,3 +4469,103 @@ window.openMerchantMenu = openMerchantMenu;
 window.buyAndromedaBuilding = buyAndromedaBuilding;
 window.startMerchantLoop = startMerchantLoop;
 
+
+// ==========================================
+// UI LOGROS (Attached to Window for HTML access)
+// ==========================================
+
+window.toggleAchievements = function () {
+    const modal = document.getElementById('modal-achievements');
+    if (!modal) return;
+
+    if (modal.style.display === 'flex') {
+        modal.style.display = 'none';
+        sfxClick();
+    } else {
+        modal.style.display = 'flex';
+        renderAchievements('all');
+        sfxClick();
+    }
+};
+
+window.filterAchievements = function (type) {
+    // Update tabs UI
+    if (event && event.target) {
+        document.querySelectorAll('.ach-tab').forEach(b => b.classList.remove('active'));
+        event.target.classList.add('active');
+    }
+    renderAchievements(type);
+    sfxClick();
+};
+
+function renderAchievements(filterType) {
+    const grid = document.getElementById('achievements-grid');
+    if (!grid) return;
+
+    grid.innerHTML = ''; // Limpiar
+
+    // 1. Filtrar lista
+    let list = achievementsConfig;
+    if (filterType !== 'all') {
+        list = list.filter(a => a.type === filterType);
+    }
+
+    // 2. Ordenar: Desbloqueados primero
+    list.sort((a, b) => {
+        const aUnlocked = game.achievements.includes(a.id);
+        const bUnlocked = game.achievements.includes(b.id);
+        if (aUnlocked && !bUnlocked) return -1;
+        if (!aUnlocked && bUnlocked) return 1;
+        return 0;
+    });
+
+    // 3. Renderizar (Usando Fragment para rendimiento)
+    const fragment = document.createDocumentFragment();
+
+    // Limitar renderizado si son demasiados para evitar lag (mostrar max 500)
+    const renderLimit = 500;
+    let renderedCount = 0;
+
+    list.forEach(ach => {
+        if (renderedCount >= renderLimit) return;
+
+        const unlocked = game.achievements.includes(ach.id);
+        const card = document.createElement('div');
+        card.className = `achievement-card ${unlocked ? 'unlocked' : 'locked'}`;
+
+        // Icono basado en tipo
+        let icon = '🏆';
+        if (ach.type === 'energy') icon = '🔋';
+        if (ach.type === 'click') icon = '👆';
+        if (ach.type === 'building') icon = '🏗️';
+        if (ach.type === 'cps') icon = '⚡';
+        if (ach.type === 'special') icon = '🌟';
+        if (ach.type === 'prestige') icon = '🌌';
+
+        card.textContent = icon;
+
+        // Tooltip (CSS content attr)
+        // Usamos caracteres ASCII para salto de línea si CSS white-space: pre-wrap está activo
+        const statusText = unlocked ? "✅ DESBLOQUEADO" : "🔒 BLOQUEADO";
+        card.setAttribute('data-tooltip', `${ach.name}\n\n${ach.desc}\n\nRecompensa: ${ach.reward}\n${statusText}`);
+
+        fragment.appendChild(card);
+        renderedCount++;
+    });
+
+    // Si hay más, mostrar aviso? (Opcional)
+
+    grid.appendChild(fragment);
+
+    // 4. Actualizar Header Stats
+    const count = game.achievements.length;
+    const total = achievementsConfig.length;
+    // Bonus actual: achievements * 1%
+    const bonus = count; // +1% per achievement
+
+    const countEl = document.getElementById('ach-count');
+    const bonusEl = document.getElementById('ach-bonus');
+
+    if (countEl) countEl.innerText = `${count} / ${total}`;
+    if (bonusEl) bonusEl.innerText = `Bonus: +${bonus}%`;
+}
